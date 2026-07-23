@@ -7,7 +7,7 @@ import { uid } from "../lib/format.js";
  * Dzięki temu istniejące produkcje w localStorage przeżywają aktualizację
  * aplikacji zamiast się kasować.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /* ---------------------------------------------------------------------- */
 /*  Konstruktory encji                                                      */
@@ -156,6 +156,12 @@ export function emptyState() {
     team: [],
     templates: [],
     settings: { activeProjectId: null },
+    /**
+     * Znacznik zmiany stanu. `revision` rośnie przy każdej akcji użytkownika,
+     * `updatedAt` mówi kiedy. Synchronizacja z chmurą porównuje te dwie
+     * wartości z zapisem zdalnym, żeby wiedzieć, która strona jest nowsza.
+     */
+    meta: { revision: 0, updatedAt: Date.now() },
   };
 }
 
@@ -353,6 +359,17 @@ const MIGRATIONS = {
 
     return { ...state, version: 3, projects };
   },
+
+  /**
+   * v3 → v4: znacznik zmiany na potrzeby synchronizacji z chmurą.
+   * Stan lokalny startuje z rewizją 0, więc pierwszy zapis zdalny wygra
+   * porównanie tylko wtedy, gdy faktycznie jest nowszy.
+   */
+  3: (state) => ({
+    ...state,
+    version: 4,
+    meta: state.meta || { revision: 0, updatedAt: Date.now() },
+  }),
 };
 
 /** Podnosi dowolny zapisany stan do bieżącej wersji schematu. */

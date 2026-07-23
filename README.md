@@ -83,11 +83,24 @@ npm run build
 npm run preview
 ```
 
+## Synchronizacja z chmurą (opcjonalna)
+
+Domyślnie dane siedzą w `localStorage` i aplikacja nie pokazuje niczego związanego z chmurą.
+Po skonfigurowaniu Supabase dochodzi logowanie linkiem mailowym i synchronizacja stanu między
+urządzeniami — z blokadą optymistyczną i oknem wyboru wersji przy konflikcie.
+
+Instrukcja uruchomienia i ograniczenia:
+[docs/synchronizacja-online.md](docs/synchronizacja-online.md).
+
+> Etap 1 obsługuje **jedną osobę na wielu urządzeniach**. Wspólna praca zespołu na jednym
+> projekcie wymaga Etapu 2 (rozbicia stanu na tabele encji).
+
 ## Stos technologiczny
 
 - React 19 + Vite
 - lucide-react — ikony
-- brak backendu — dane w `localStorage` przeglądarki
+- Supabase — opcjonalne logowanie i synchronizacja
+- bez konfiguracji chmury: brak backendu, dane w `localStorage` przeglądarki
 
 ## Struktura
 
@@ -104,8 +117,10 @@ src/
     scrum.js           # sprinty, velocity, burndown
     guidance.js        # bramki faz i silnik „co teraz?"
   state/store.jsx      # reducer + kontekst — jedno źródło prawdy
+  cloud/               # klient Supabase, synchronizacja, hook useCloudSync
   components/          # elementy współdzielone, karta i modal zadania
   views/               # Co teraz / Proces / Sprint / Tablica / Zespół / Szablony
+supabase/migrations/   # SQL do uruchomienia w Supabase
 ```
 
 ## Wersjonowanie danych
@@ -117,8 +132,9 @@ odkładany do klucza `pm-app-state-backup`.
 
 ## Plany rozwoju
 
-- **Praca wielu osób na wspólnych danych** — dziś jedna przeglądarka, wymiana przez eksport JSON.
-  Propozycja architektury: [docs/synchronizacja-online.md](docs/synchronizacja-online.md)
+- **Praca wielu osób na wspólnych danych** — Etap 2 z
+  [docs/synchronizacja-online.md](docs/synchronizacja-online.md): rozbicie stanu na tabele encji,
+  realtime, `time_entries` zamiast pól czasu na zadaniu
 - Widok kalendarza i kamieni milowych
 - Wykres przepływu skumulowanego (CFD)
 - Integracja z GitHubem (domykanie zadań przy zmergowaniu PR)

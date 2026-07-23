@@ -148,9 +148,9 @@ Egzekwowane przez RLS w Postgresie, nie w interfejsie — ukryty przycisk to nie
 
 Każdy etap jest samodzielnie użyteczny; można się zatrzymać po dowolnym.
 
-**Etap 1 — logowanie i chmura dla jednej osoby (1–2 dni).**
+**Etap 1 — logowanie i chmura dla jednej osoby. ✅ ZAIMPLEMENTOWANY.**
 Auth + jedna tabela ze stanem w `jsonb` na użytkownika. Znika ryzyko utraty danych, pojawia się
-praca na wielu urządzeniach. Model domenowy bez zmian.
+praca na wielu urządzeniach. Model domenowy bez zmian. Szczegóły uruchomienia niżej.
 
 **Etap 2 — tabele encji i realtime (około tydzień).**
 Rozbicie stanu na tabele, subskrypcja zmian projektu, `time_entries` zamiast pól na zadaniu.
@@ -161,6 +161,39 @@ RLS, `close_phase` i `close_sprint` jako funkcje w bazie, `audit_log`.
 
 **Etap 4 — kolejka offline (2–3 dni).**
 Bufor mutacji, wskaźnik stanu synchronizacji, obsługa odrzuconych zapisów.
+
+## Uruchomienie Etapu 1
+
+Bez konfiguracji aplikacja działa lokalnie i nie pokazuje niczego związanego z chmurą — włączenie
+synchronizacji jest w pełni opcjonalne.
+
+1. Załóż projekt na [supabase.com](https://supabase.com).
+2. W SQL Editorze uruchom [`supabase/migrations/0001_app_state.sql`](../supabase/migrations/0001_app_state.sql).
+3. Skopiuj `.env.example` jako `.env.local` i uzupełnij `VITE_SUPABASE_URL` oraz
+   `VITE_SUPABASE_ANON_KEY` (Project Settings → API).
+4. Zrestartuj serwer deweloperski. W pasku bocznym pojawi się „Zaloguj i synchronizuj".
+
+Logowanie odbywa się **linkiem wysyłanym mailem** — aplikacja nigdy nie widzi ani nie przechowuje
+hasła. Klucz `anon` jest publiczny z założenia; ochroną jest RLS w bazie, dlatego nigdy nie
+umieszczaj w konfiguracji klucza `service_role`.
+
+### Jak zachowuje się synchronizacja
+
+- `localStorage` pozostaje magazynem podstawowym — chmura jest kopią i mostem między urządzeniami,
+  a nie warunkiem działania.
+- Każda akcja użytkownika podbija `meta.revision`; wysyłka jest opóźniona o 1,5 s, żeby seria zmian
+  poszła jednym zapisem.
+- Przy logowaniu wygrywa stan o wyższej rewizji — praca zrobiona offline nie ginie po cichu.
+- Gdy inne urządzenie zapisało w międzyczasie, funkcja `save_app_state` odrzuca zapis, a aplikacja
+  pokazuje wybór wersji zamiast nadpisywać cokolwiek automatycznie.
+- Brak sieci przełącza wskaźnik w tryb „offline"; zapis rusza po powrocie połączenia.
+
+### Ograniczenie Etapu 1
+
+Stan jest zapisywany **w całości, jako jeden dokument na użytkownika**. To wystarcza do pracy
+jednej osoby na wielu urządzeniach, ale **nie jest jeszcze pracą zespołową** — dwie osoby na
+jednym koncie będą sobie nawzajem nadpisywać stan i zobaczą okno konfliktu. Wspólna praca zespołu
+zaczyna się dopiero po Etapie 2, czyli po rozbiciu stanu na tabele encji.
 
 ## Koszt
 

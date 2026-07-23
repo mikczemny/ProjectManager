@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { C } from "./theme.js";
 import { StoreProvider, useStore } from "./state/store.jsx";
+import { useCloudSync } from "./cloud/useCloudSync.js";
 import Sidebar from "./components/Sidebar.jsx";
 import TaskModal from "./components/TaskModal.jsx";
 import { NewProjectModal, AddMemberModal, SaveAsTemplateModal } from "./components/modals.jsx";
@@ -37,6 +38,7 @@ export default function App() {
 
 function Shell() {
   const { state, dispatch, activeProject, allTemplates } = useStore();
+  const cloud = useCloudSync(state, dispatch);
 
   const [view, setView] = useState("now");
   const [activeTaskId, setActiveTaskId] = useState(null);
@@ -106,6 +108,7 @@ function Shell() {
 
       <Sidebar
         state={state}
+        cloud={cloud}
         activeProjectId={state.settings.activeProjectId}
         dispatch={dispatch}
         onSelect={(id) => {

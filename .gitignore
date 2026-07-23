@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Klucze do chmury — .env.example jest wzorcem i JEST wersjonowany
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

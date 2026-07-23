@@ -516,6 +516,27 @@ export function reducer(state, action) {
   }
 }
 
+/**
+ * Akcje, które wnoszą stan z zewnątrz (chmura, import kopii) zamiast go
+ * zmieniać z woli użytkownika. Nie podbijają rewizji — inaczej pobranie stanu
+ * z chmury natychmiast wyglądałoby na lokalną zmianę i odsyłało się z powrotem.
+ */
+const EXTERNAL_ACTIONS = new Set(["replaceState"]);
+
+/**
+ * Reducer właściwy opakowany licznikiem zmian. Każda akcja użytkownika podbija
+ * `meta.revision`, co daje synchronizacji jednoznaczną odpowiedź na pytanie,
+ * która strona ma nowszy stan.
+ */
+function rootReducer(state, action) {
+  const next = reducer(state, action);
+  if (next === state || EXTERNAL_ACTIONS.has(action.type)) return next;
+  return {
+    ...next,
+    meta: { revision: (state.meta?.revision ?? 0) + 1, updatedAt: Date.now() },
+  };
+}
+
 /* ---------------------------------------------------------------------- */
 /*  Context                                                                 */
 /* ---------------------------------------------------------------------- */
@@ -523,7 +544,7 @@ export function reducer(state, action) {
 const StoreContext = createContext(null);
 
 export function StoreProvider({ children }) {
-  const [state, dispatch] = useReducer(reducer, null, loadState);
+  const [state, dispatch] = useReducer(rootReducer, null, loadState);
 
   // Pierwszy render nie może nadpisać zapisu — czekamy na zmianę stanu.
   const hydrated = useRef(false);

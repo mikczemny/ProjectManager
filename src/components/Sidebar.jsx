@@ -5,9 +5,10 @@ import { Avatar, ProgressBar } from "./ui.jsx";
 import { projectProgress } from "../domain/selectors.js";
 import { currentPhaseEntry } from "../domain/guidance.js";
 import { exportAll, readImportFile } from "../domain/storage.js";
+import CloudPanel from "./CloudPanel.jsx";
 
 export default function Sidebar({
-  state, activeProjectId, dispatch, onSelect, onNewProject, onOpenTemplates,
+  state, activeProjectId, dispatch, onSelect, onNewProject, onOpenTemplates, cloud,
 }) {
   const fileRef = useRef(null);
   const [msg, setMsg] = useState("");
@@ -193,6 +194,8 @@ export default function Sidebar({
         </div>
         {msg && <div style={{ fontSize: 11, color: C.teal, marginTop: 6 }}>{msg}</div>}
       </div>
+
+      <CloudPanel cloud={cloud} />
     </aside>
   );
 }
