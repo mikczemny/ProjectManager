@@ -451,6 +451,42 @@ export function reducer(state, action) {
       return { ...state, templates: [...state.templates, template] };
     }
 
+    /**
+     * Zapisuje szablon z edytora — tworzy nowy albo podmienia istniejący.
+     * Edytor pracuje na kopii roboczej i oddaje gotowy obiekt, więc jedna
+     * akcja zastępuje kilkanaście granularnych (dodaj fazę, zmień kryterium…).
+     */
+    case "upsertTemplate": {
+      const incoming = { ...action.template, builtIn: false };
+      const exists = state.templates.some((t) => t.id === incoming.id);
+      return {
+        ...state,
+        templates: exists
+          ? state.templates.map((t) => (t.id === incoming.id ? incoming : t))
+          : [...state.templates, incoming],
+      };
+    }
+
+    /** Kopia szablonu — jedyny sposób na „edycję" szablonu wbudowanego. */
+    case "duplicateTemplate": {
+      const source =
+        state.templates.find((t) => t.id === action.templateId) ||
+        BUILT_IN_TEMPLATES.find((t) => t.id === action.templateId);
+      if (!source) return state;
+      return {
+        ...state,
+        templates: [
+          ...state.templates,
+          makeTemplate({
+            ...structuredClone(source),
+            id: uid(),
+            name: `${source.name} (kopia)`,
+            builtIn: false,
+          }),
+        ],
+      };
+    }
+
     case "importTemplate":
       return {
         ...state,

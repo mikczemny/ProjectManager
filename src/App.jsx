@@ -13,6 +13,7 @@ import SprintView from "./views/SprintView.jsx";
 import BoardView from "./views/BoardView.jsx";
 import TeamView from "./views/TeamView.jsx";
 import TemplatesView from "./views/TemplatesView.jsx";
+import TemplateEditor from "./views/TemplateEditor.jsx";
 import { formatDuration } from "./lib/format.js";
 import { projectTime } from "./domain/selectors.js";
 import { processHeadline, nextSteps } from "./domain/guidance.js";
@@ -43,6 +44,8 @@ function Shell() {
   const [filter, setFilter] = useState({});
   const [modal, setModal] = useState(null); // null | "newProject" | "addMember" | "saveTemplate"
   const [presetTemplateId, setPresetTemplateId] = useState(null);
+  /** null = tworzymy nowy szablon; obiekt = edytujemy istniejący. */
+  const [editingTemplate, setEditingTemplate] = useState(null);
   const [, forceTick] = useState(0);
 
   /* Odświeżanie zegarów tylko wtedy, gdy cokolwiek tyka. */
@@ -115,7 +118,25 @@ function Shell() {
       />
 
       <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {view === "templates" ? (
+        {view === "templateEditor" ? (
+          <>
+            <SimpleBar
+              title={editingTemplate ? `Edycja: ${editingTemplate.name || "nowy szablon"}` : "Nowy szablon"}
+            />
+            <TemplateEditor
+              template={editingTemplate}
+              onCancel={() => {
+                setEditingTemplate(null);
+                setView("templates");
+              }}
+              onSave={(template) => {
+                dispatch({ type: "upsertTemplate", template });
+                setEditingTemplate(null);
+                setView("templates");
+              }}
+            />
+          </>
+        ) : view === "templates" ? (
           <>
             <SimpleBar title="Szablony procesów" onBack={activeProject ? () => setView("now") : null} />
             <TemplatesView
@@ -127,6 +148,14 @@ function Shell() {
                 setModal("newProject");
               }}
               onSaveAsTemplate={() => setModal("saveTemplate")}
+              onCreate={() => {
+                setEditingTemplate(null);
+                setView("templateEditor");
+              }}
+              onEdit={(t) => {
+                setEditingTemplate(t);
+                setView("templateEditor");
+              }}
             />
           </>
         ) : activeProject ? (

@@ -1,10 +1,12 @@
 import React, { useRef, useState } from "react";
-import { Download, Upload, Trash2, Lock, BookMarked, FolderPlus } from "lucide-react";
+import { Download, Upload, Trash2, Lock, BookMarked, FolderPlus, Plus, Pencil, Copy } from "lucide-react";
 import { C, primaryButton, ghostButton } from "../theme.js";
 import { Panel, Muted, SectionTitle, Badge } from "../components/ui.jsx";
 import { exportTemplate, readImportFile } from "../domain/storage.js";
 
-export default function TemplatesView({ templates, activeProject, dispatch, onUseTemplate, onSaveAsTemplate }) {
+export default function TemplatesView({
+  templates, activeProject, dispatch, onUseTemplate, onSaveAsTemplate, onEdit, onCreate,
+}) {
   const fileRef = useRef(null);
   const [error, setError] = useState("");
 
@@ -30,7 +32,10 @@ export default function TemplatesView({ templates, activeProject, dispatch, onUs
       <div style={{ maxWidth: 820 }}>
         <SectionTitle
           right={
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={onCreate} style={primaryButton(true)}>
+                <Plus size={13} /> Nowy szablon
+              </button>
               {activeProject && (
                 <button onClick={onSaveAsTemplate} style={ghostButton}>
                   <BookMarked size={13} /> Zapisz bieżący projekt jako szablon
@@ -91,6 +96,15 @@ export default function TemplatesView({ templates, activeProject, dispatch, onUs
                     <FolderPlus size={13} /> Użyj
                   </button>
                   <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                    {/* Wbudowanego nie da się edytować — ale można go skopiować
+                        i przerobić kopię pod własny sposób pracy. */}
+                    <button
+                      onClick={() => (t.builtIn ? dispatch({ type: "duplicateTemplate", templateId: t.id }) : onEdit(t))}
+                      title={t.builtIn ? "Skopiuj, żeby edytować" : "Edytuj szablon"}
+                      style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 6, padding: 5, color: C.muted }}
+                    >
+                      {t.builtIn ? <Copy size={12} /> : <Pencil size={12} />}
+                    </button>
                     <button
                       onClick={() => exportTemplate(t)}
                       title="Eksportuj do JSON"

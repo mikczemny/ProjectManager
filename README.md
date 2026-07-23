@@ -53,6 +53,8 @@ i importowane z pliku JSON.
 
 ## Szkielet do kolejnych produkcji
 
+- **Edytor szablonów** — fazy, bramki, kryteria i zadania startowe edytowane w aplikacji.
+  Szablony wbudowane są zablokowane, ale można je skopiować i przerobić kopię.
 - **Zapisz projekt jako szablon** — udana produkcja staje się punktem startowym następnej.
 - **Eksport / import** — cała kopia zapasowa, pojedynczy projekt albo sam szablon procesu.
   Wyeksportowany proces można trzymać w repozytorium produkcji obok kodu.
@@ -115,7 +117,8 @@ odkładany do klucza `pm-app-state-backup`.
 
 ## Plany rozwoju
 
+- **Praca wielu osób na wspólnych danych** — dziś jedna przeglądarka, wymiana przez eksport JSON.
+  Propozycja architektury: [docs/synchronizacja-online.md](docs/synchronizacja-online.md)
 - Widok kalendarza i kamieni milowych
 - Wykres przepływu skumulowanego (CFD)
-- Edytor szablonów w aplikacji (dziś: edycja przez projekt → „zapisz jako szablon")
-- Praca wielu osób na wspólnych danych (dziś: jedna przeglądarka, wymiana przez eksport JSON)
+- Integracja z GitHubem (domykanie zadań przy zmergowaniu PR)
