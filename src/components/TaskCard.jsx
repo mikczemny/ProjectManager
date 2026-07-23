@@ -3,16 +3,19 @@ import { Pause, Play, MessageSquare, CalendarClock, Ban } from "lucide-react";
 import { C, PRIORITIES, TASK_TYPES } from "../theme.js";
 import { formatDuration, formatDate, daysUntil } from "../lib/format.js";
 import { Avatar, Badge } from "./ui.jsx";
-import { taskTime, isOverdue, isDueSoon, blockers } from "../domain/selectors.js";
+import { taskTime, isOverdue, isDueSoon, blockers, isTimerRunning } from "../domain/selectors.js";
 
-export default function TaskCard({ task, project, team, phase, onOpen, onToggleTimer }) {
-  const running = !!task.timerStartedAt;
+export default function TaskCard({ task, project, team, phase, onOpen, onToggleTimer, currentUserId }) {
+  // Zielony timer oznacza „ja mierzę". Pomiar kolegi widać w sumie czasu,
+  // ale przycisk nie udaje, że jest twój.
+  const running = isTimerRunning(task, currentUserId);
+  const anyRunning = isTimerRunning(task);
   const [, tick] = useState(0);
   useEffect(() => {
-    if (!running) return;
+    if (!anyRunning) return;
     const id = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [running]);
+  }, [anyRunning]);
 
   const member = team.find((m) => m.id === task.assignee);
   const prio = PRIORITIES[task.priority];
@@ -91,12 +94,13 @@ export default function TaskCard({ task, project, team, phase, onOpen, onToggleT
               e.stopPropagation();
               onToggleTimer();
             }}
+            title={anyRunning && !running ? "Ktoś inny mierzy czas na tym zadaniu" : undefined}
             style={{
               display: "flex", alignItems: "center", gap: 4,
               background: running ? `${C.amber}22` : "transparent",
-              border: `1px solid ${running ? C.amber : C.border}`,
+              border: `1px solid ${running ? C.amber : anyRunning ? C.teal : C.border}`,
               borderRadius: 5, padding: "3px 6px",
-              color: running ? C.amber : C.mutedDim,
+              color: running ? C.amber : anyRunning ? C.teal : C.mutedDim,
             }}
           >
             {running ? <Pause size={10} /> : <Play size={10} />}

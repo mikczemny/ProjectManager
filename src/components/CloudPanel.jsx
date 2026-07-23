@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Cloud, CloudOff, RefreshCw, Check, LogOut, AlertTriangle, Mail } from "lucide-react";
+import { Cloud, CloudOff, RefreshCw, Check, LogOut, AlertTriangle, Mail, Users, Plus } from "lucide-react";
 import { C, inputStyle, primaryButton, ghostButton } from "../theme.js";
 import { ModalShell, ModalHeader, Muted } from "./ui.jsx";
 import { sendMagicLink } from "../cloud/sync.js";
@@ -7,15 +7,23 @@ import { sendMagicLink } from "../cloud/sync.js";
 const STATUS = {
   idle: { icon: CloudOff, color: C.mutedDim, label: "Praca lokalna" },
   loading: { icon: RefreshCw, color: C.mutedDim, label: "Sprawdzanie…" },
+  "no-workspace": { icon: Users, color: C.amber, label: "Brak przestrzeni" },
   syncing: { icon: RefreshCw, color: C.amber, label: "Synchronizacja…" },
   synced: { icon: Check, color: C.green, label: "Zsynchronizowane" },
   offline: { icon: CloudOff, color: C.amber, label: "Offline — zapiszę później" },
-  conflict: { icon: AlertTriangle, color: C.red, label: "Konflikt zmian" },
   error: { icon: AlertTriangle, color: C.red, label: "Błąd synchronizacji" },
+};
+
+const ROLE_LABEL = {
+  owner: "właściciel",
+  manager: "manager",
+  member: "zespół",
+  viewer: "podgląd",
 };
 
 export default function CloudPanel({ cloud }) {
   const [showLogin, setShowLogin] = useState(false);
+  const [showWorkspace, setShowWorkspace] = useState(false);
 
   // Bez konfiguracji nie zaśmiecamy interfejsu — aplikacja po prostu działa lokalnie.
   if (!cloud.configured) return null;
@@ -39,6 +47,34 @@ export default function CloudPanel({ cloud }) {
                 <LogOut size={12} />
               </button>
             </div>
+            {cloud.workspaces.length > 0 && (
+              <select
+                value={cloud.workspaceId || ""}
+                onChange={(e) => cloud.selectWorkspace(e.target.value)}
+                style={{
+                  width: "100%", background: C.elevated, border: `1px solid ${C.border}`,
+                  borderRadius: 6, color: C.text, fontSize: 11.5, padding: "4px 6px",
+                  outline: "none", marginBottom: 6,
+                }}
+              >
+                {cloud.workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            )}
+
+            <button
+              onClick={() => setShowWorkspace(true)}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 5, padding: "5px 8px", borderRadius: 6, background: "transparent",
+                border: `1px dashed ${C.border}`, color: C.mutedDim, fontSize: 11,
+                marginBottom: 6,
+              }}
+            >
+              <Plus size={11} /> Nowa przestrzeń zespołu
+            </button>
+
             <div
               className="mono"
               style={{
@@ -47,6 +83,7 @@ export default function CloudPanel({ cloud }) {
               }}
             >
               {cloud.session.user.email}
+              {cloud.role && ` · ${ROLE_LABEL[cloud.role] || cloud.role}`}
             </div>
             {cloud.error && (
               <div style={{ fontSize: 10.5, color: C.red, marginTop: 4 }}>{cloud.error}</div>
@@ -67,10 +104,62 @@ export default function CloudPanel({ cloud }) {
       </div>
 
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
-      {cloud.hasConflict && (
-        <ConflictModal conflict={cloud.conflict} onResolve={cloud.resolveConflict} />
+      {showWorkspace && (
+        <WorkspaceModal
+          onClose={() => setShowWorkspace(false)}
+          onCreate={async (name) => {
+            await cloud.newWorkspace(name);
+            setShowWorkspace(false);
+          }}
+        />
       )}
     </>
+  );
+}
+
+function WorkspaceModal({ onClose, onCreate }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onCreate(name.trim());
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} width={420}>
+      <ModalHeader title="Nowa przestrzeń zespołu" onClose={onClose} />
+      <Muted size={12.5}>
+        Przestrzeń to wspólne dane zespołu — projekty, szablony i czas pracy. Zakładając ją,
+        stajesz się właścicielem i możesz zapraszać kolejne osoby.
+      </Muted>
+      <Muted size={12}>
+        Jeśli masz już projekty lokalnie, pierwsza pusta przestrzeń przejmie je automatycznie.
+      </Muted>
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="np. Zespół produktowy"
+        style={{ ...inputStyle, marginTop: 14 }}
+      />
+      {error && <div style={{ fontSize: 12, color: C.red, marginTop: 8 }}>{error}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+        <button onClick={onClose} style={ghostButton}>Anuluj</button>
+        <button onClick={submit} disabled={busy || !name.trim()} style={primaryButton(!busy && !!name.trim())}>
+          {busy ? "Tworzenie…" : "Utwórz"}
+        </button>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -134,49 +223,3 @@ function LoginModal({ onClose }) {
   );
 }
 
-function ConflictModal({ conflict, onResolve }) {
-  const remoteProjects = conflict?.state?.projects?.length ?? 0;
-
-  return (
-    <ModalShell onClose={() => {}} width={480}>
-      <ModalHeader title="Konflikt zmian" />
-      <Muted size={12.5}>
-        Inne urządzenie zapisało zmiany, zanim zdążyły dolecieć Twoje. Nie nadpisuję niczego
-        automatycznie — wybierz, która wersja jest właściwa. Druga zostanie utracona, więc jeśli
-        nie masz pewności, zrób najpierw kopię przyciskiem „Kopia" w pasku bocznym.
-      </Muted>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-        <button
-          onClick={() => onResolve("local")}
-          style={{
-            textAlign: "left", background: C.elevated, border: `1px solid ${C.amber}`,
-            borderRadius: 9, padding: "12px 14px", color: C.text,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
-            Zachowaj wersję z tego urządzenia
-          </div>
-          <div style={{ fontSize: 12, color: C.mutedDim }}>
-            To, co widzisz teraz na ekranie, nadpisze zapis w chmurze.
-          </div>
-        </button>
-
-        <button
-          onClick={() => onResolve("remote")}
-          style={{
-            textAlign: "left", background: C.elevated, border: `1px solid ${C.border}`,
-            borderRadius: 9, padding: "12px 14px", color: C.text,
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
-            Pobierz wersję z chmury
-          </div>
-          <div style={{ fontSize: 12, color: C.mutedDim }}>
-            Zapis z drugiego urządzenia ({remoteProjects} projektów) zastąpi to, co masz tutaj.
-          </div>
-        </button>
-      </div>
-    </ModalShell>
-  );
-}

@@ -8,7 +8,7 @@ import {
 import { formatDate } from "../lib/format.js";
 import { PRIORITIES } from "../theme.js";
 
-export default function SprintView({ project, dispatch, onOpenTask }) {
+export default function SprintView({ project, dispatch, onOpenTask, onCloseSprint }) {
   const sprint = activeSprint(project);
   const planned = project.sprints.filter((s) => s.status === "planned");
   const closed = project.sprints.filter((s) => s.status === "closed");
@@ -19,7 +19,14 @@ export default function SprintView({ project, dispatch, onOpenTask }) {
     <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
       <div style={{ maxWidth: 900 }}>
         {sprint ? (
-          <ActiveSprint project={project} sprint={sprint} dispatch={dispatch} onOpenTask={onOpenTask} velocityAvg={v.avg} />
+          <ActiveSprint
+            project={project}
+            sprint={sprint}
+            dispatch={dispatch}
+            onOpenTask={onOpenTask}
+            onCloseSprint={onCloseSprint}
+            velocityAvg={v.avg}
+          />
         ) : (
           <Panel accent={C.amber} style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
@@ -168,7 +175,7 @@ export default function SprintView({ project, dispatch, onOpenTask }) {
 
 /* ---------------------------------------------------------------------- */
 
-function ActiveSprint({ project, sprint, dispatch, onOpenTask, velocityAvg }) {
+function ActiveSprint({ project, sprint, dispatch, onOpenTask, onCloseSprint, velocityAvg }) {
   const sum = sprintSummary(project, sprint);
   const chart = burndown(project, sprint);
   const [goal, setGoal] = useState(sprint.goal);
@@ -194,7 +201,7 @@ function ActiveSprint({ project, sprint, dispatch, onOpenTask, velocityAvg }) {
         <button
           onClick={() => {
             if (confirm("Domknąć sprint? Niedowiezione zadania wrócą do backlogu.")) {
-              dispatch({ type: "closeSprint", projectId: project.id, sprintId: sprint.id });
+              onCloseSprint(sprint.id);
             }
           }}
           style={ghostButton}

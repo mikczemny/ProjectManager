@@ -1,10 +1,28 @@
 import { daysUntil } from "../lib/format.js";
 
-/** Czas zadania łącznie z trwającym pomiarem, w sekundach. */
+/** Czas zadania łącznie z trwającymi pomiarami, w sekundach. */
 export function taskTime(task, now = Date.now()) {
-  const running = task.timerStartedAt ? (now - task.timerStartedAt) / 1000 : 0;
-  return task.timeSpent + running;
+  return (task.timeEntries || []).reduce(
+    (sum, e) => sum + ((e.endedAt ?? now) - e.startedAt) / 1000,
+    0
+  );
 }
+
+/** Czas wniesiony przez konkretną osobę — podstawa rozliczeń w zespole. */
+export function taskTimeByUser(task, userId, now = Date.now()) {
+  return (task.timeEntries || [])
+    .filter((e) => e.userId === userId)
+    .reduce((sum, e) => sum + ((e.endedAt ?? now) - e.startedAt) / 1000, 0);
+}
+
+/** Pomiar w toku dla danej osoby (albo dowolnej, gdy userId pominięte). */
+export function runningEntry(task, userId) {
+  return (task.timeEntries || []).find(
+    (e) => e.endedAt == null && (userId === undefined || e.userId === userId)
+  );
+}
+
+export const isTimerRunning = (task, userId) => Boolean(runningEntry(task, userId));
 
 export function projectTime(project, now = Date.now()) {
   return project.tasks.reduce((sum, t) => sum + taskTime(t, now), 0);

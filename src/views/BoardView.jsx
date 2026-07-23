@@ -6,7 +6,7 @@ import { filterTasks, isFilterActive } from "../domain/selectors.js";
 import { activeSprint } from "../domain/scrum.js";
 import { Badge } from "../components/ui.jsx";
 
-export default function BoardView({ project, team, dispatch, filter, setFilter, onOpenTask }) {
+export default function BoardView({ project, team, dispatch, filter, setFilter, onOpenTask, currentUserId }) {
   const [dragOver, setDragOver] = useState(null);
   const [newTask, setNewTask] = useState("");
   const sprint = activeSprint(project);
@@ -128,9 +128,15 @@ export default function BoardView({ project, team, dispatch, filter, setFilter, 
                       project={project}
                       team={team}
                       phase={phaseById(task.phaseId)}
+                      currentUserId={currentUserId}
                       onOpen={() => onOpenTask(task.id)}
                       onToggleTimer={() =>
-                        dispatch({ type: "toggleTimer", projectId: project.id, taskId: task.id })
+                        dispatch({
+                          type: "toggleTimer",
+                          projectId: project.id,
+                          taskId: task.id,
+                          userId: currentUserId,
+                        })
                       }
                     />
                   ))}

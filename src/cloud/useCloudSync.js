@@ -1,35 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isCloudConfigured } from "./client.js";
-import { getSession, onAuthChange, pullState, pushState, signOut } from "./sync.js";
+import { getSession, onAuthChange, signOut } from "./sync.js";
+import {
+  listWorkspaces, createWorkspace, hydrate, applyOps, subscribe,
+  closePhaseRemote, closeSprintRemote,
+} from "./remote.js";
+import { diffStates, isEmptyDiff } from "./diff.js";
+import { emptyState } from "../domain/schema.js";
 
-const PUSH_DEBOUNCE_MS = 1500;
+const PUSH_DEBOUNCE_MS = 1200;
+const PULL_DEBOUNCE_MS = 700;
+const WORKSPACE_KEY = "pm-workspace-id";
 
 /**
- * Spina store z chmurą.
+ * Synchronizacja zespołowa (Etap 2).
  *
- * Zasady:
- *  - localStorage pozostaje magazynem podstawowym; chmura jest kopią i mostem
- *    między urządzeniami, a nie warunkiem działania aplikacji,
- *  - przy logowaniu wygrywa stan o wyższej rewizji — bez cichego kasowania
- *    pracy zrobionej offline,
- *  - konflikt (inne urządzenie zapisało w międzyczasie) nie jest rozstrzygany
- *    automatycznie, tylko oddany użytkownikowi.
+ * Jednostką zapisu jest wiersz, nie cały stan — dwie osoby pracujące na tym
+ * samym projekcie nie nadpisują się nawzajem, dopóki nie ruszają tego samego
+ * pola. Wysyłka powstaje z porównania stanów, więc każda nowa akcja reducera
+ * synchronizuje się bez dopisywania czegokolwiek tutaj.
  *
- * Zwraca stan połączenia i akcje dla interfejsu.
+ * Bez konfiguracji chmury hook nie robi nic i aplikacja pracuje lokalnie.
  */
 export function useCloudSync(state, dispatch) {
   const [session, setSession] = useState(null);
-  /** idle | loading | syncing | synced | offline | conflict | error */
+  const [workspaces, setWorkspaces] = useState([]);
+  const [workspaceId, setWorkspaceId] = useState(
+    () => localStorage.getItem(WORKSPACE_KEY) || null
+  );
+  /** idle | loading | no-workspace | syncing | synced | offline | error */
   const [status, setStatus] = useState(isCloudConfigured ? "loading" : "idle");
   const [error, setError] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
 
-  /** Rewizja, którą ostatnio potwierdziła chmura. */
-  const remoteRevision = useRef(0);
-  /** Rewizja, którą ostatnio udało się wysłać — chroni przed pętlą zapisów. */
-  const pushedRevision = useRef(null);
-  const timer = useRef(null);
-  const conflictRef = useRef(null);
+  /** Stan, który na pewno jest już w bazie — punkt odniesienia dla różnicy. */
+  const baseline = useRef(null);
+  const pushTimer = useRef(null);
+  const pullTimer = useRef(null);
+  /** Zdarzenia realtime wywołane naszym własnym zapisem ignorujemy. */
+  const selfWriteUntil = useRef(0);
+
+  const role = workspaces.find((w) => w.id === workspaceId)?.role || null;
+  const mode = isCloudConfigured && session && workspaceId ? "cloud" : "local";
 
   /* --- sesja --- */
   useEffect(() => {
@@ -48,48 +60,25 @@ export function useCloudSync(state, dispatch) {
       setSession(s);
       if (!s) {
         setStatus("idle");
-        pushedRevision.current = null;
-        remoteRevision.current = 0;
+        baseline.current = null;
+        setWorkspaces([]);
       }
     });
   }, []);
 
-  /* --- pierwsze pobranie po zalogowaniu --- */
+  /* --- przestrzenie robocze --- */
   useEffect(() => {
     if (!session?.user) return;
     let alive = true;
-    setStatus("syncing");
 
-    pullState(session.user.id)
-      .then((remote) => {
+    listWorkspaces()
+      .then((list) => {
         if (!alive) return;
-
-        const localRevision = state.meta?.revision ?? 0;
-
-        if (!remote) {
-          // Pierwsze logowanie na tym koncie — chmura dostaje to, co mamy lokalnie.
-          remoteRevision.current = 0;
-          pushedRevision.current = null;
-          setStatus("synced");
-          return;
-        }
-
-        remoteRevision.current = remote.revision;
-
-        if (remote.revision > localRevision) {
-          dispatch({ type: "replaceState", state: remote.state });
-          pushedRevision.current = remote.revision;
-          setLastSyncedAt(Date.now());
-          setStatus("synced");
-        } else if (remote.revision < localRevision) {
-          // Lokalnie jest nowsza praca — zostaje i zaraz poleci w górę.
-          pushedRevision.current = remote.revision;
-          setStatus("synced");
-        } else {
-          pushedRevision.current = localRevision;
-          setLastSyncedAt(Date.now());
-          setStatus("synced");
-        }
+        setWorkspaces(list);
+        const stored = localStorage.getItem(WORKSPACE_KEY);
+        const pick = list.find((w) => w.id === stored)?.id || list[0]?.id || null;
+        setWorkspaceId(pick);
+        if (!pick) setStatus("no-workspace");
       })
       .catch((e) => {
         if (!alive) return;
@@ -100,88 +89,181 @@ export function useCloudSync(state, dispatch) {
     return () => {
       alive = false;
     };
-    // Celowo tylko po sesji: pobranie ma nastąpić raz, przy wejściu na konto.
+    // Lista przestrzeni zależy od tożsamości, nie od reszty obiektu sesji.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id]);
 
-  /* --- wysyłka zmian --- */
+  /* --- pobranie zawartości przestrzeni --- */
+  const pull = useCallback(async () => {
+    if (!workspaceId) return;
+    const remote = await hydrate(workspaceId, emptyState());
+    baseline.current = remote;
+    dispatch({ type: "replaceState", state: remote });
+    setLastSyncedAt(Date.now());
+    setStatus("synced");
+  }, [workspaceId, dispatch]);
+
   useEffect(() => {
-    if (!session?.user || status === "loading" || status === "conflict") return;
+    if (!session?.user || !workspaceId) return;
+    let alive = true;
+    localStorage.setItem(WORKSPACE_KEY, workspaceId);
+    setStatus("syncing");
 
-    const revision = state.meta?.revision ?? 0;
-    if (pushedRevision.current === null) return; // pobranie jeszcze nie ustaliło punktu odniesienia
-    if (revision === pushedRevision.current) return;
+    // Pierwsze wejście do pustej przestrzeni wnosi to, co użytkownik ma lokalnie.
+    hydrate(workspaceId, emptyState())
+      .then(async (remote) => {
+        if (!alive) return;
+        const remoteEmpty = remote.projects.length === 0 && remote.team.length === 0;
+        const localHasData = state.projects.length > 0 || state.team.length > 0;
 
-    clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      setStatus("syncing");
-      try {
-        const result = await pushState(session.user.id, state, remoteRevision.current);
-
-        if (result.ok) {
-          remoteRevision.current = result.revision;
-          pushedRevision.current = result.revision;
+        if (remoteEmpty && localHasData) {
+          baseline.current = remote;
+          const ops = diffStates(remote, state);
+          selfWriteUntil.current = Date.now() + 2500;
+          await applyOps(workspaceId, ops);
+          baseline.current = state;
           setLastSyncedAt(Date.now());
           setStatus("synced");
-          setError("");
-        } else if (result.reason === "conflict") {
-          // Inne urządzenie zapisało w międzyczasie. Nie zgadujemy, co jest
-          // ważniejsze — pokazujemy wybór.
-          const remote = await pullState(session.user.id);
-          conflictRef.current = remote;
-          setStatus("conflict");
+          return;
         }
+
+        baseline.current = remote;
+        dispatch({ type: "replaceState", state: remote });
+        setLastSyncedAt(Date.now());
+        setStatus("synced");
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setError(e.message);
+        setStatus(navigator.onLine ? "error" : "offline");
+      });
+
+    return () => {
+      alive = false;
+    };
+    // Pobranie ma nastąpić przy wejściu do przestrzeni, nie przy każdej zmianie stanu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id, workspaceId]);
+
+  /* --- wysyłka zmian --- */
+  useEffect(() => {
+    if (mode !== "cloud" || !baseline.current) return;
+    if (status === "loading" || status === "syncing") return;
+
+    const ops = diffStates(baseline.current, state);
+    if (isEmptyDiff(ops)) return;
+
+    clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(async () => {
+      const snapshot = state;
+      setStatus("syncing");
+      try {
+        selfWriteUntil.current = Date.now() + 2500;
+        await applyOps(workspaceId, diffStates(baseline.current, snapshot));
+        baseline.current = snapshot;
+        setLastSyncedAt(Date.now());
+        setStatus("synced");
+        setError("");
       } catch (e) {
         setError(e.message);
         setStatus(navigator.onLine ? "error" : "offline");
       }
     }, PUSH_DEBOUNCE_MS);
 
-    return () => clearTimeout(timer.current);
-  }, [state, session, status]);
+    return () => clearTimeout(pushTimer.current);
+  }, [state, mode, workspaceId, status]);
 
-  /* --- ponowna próba po odzyskaniu sieci --- */
+  /* --- nasłuch zmian od innych --- */
+  useEffect(() => {
+    if (mode !== "cloud") return;
+
+    return subscribe(workspaceId, () => {
+      if (Date.now() < selfWriteUntil.current) return; // echo własnego zapisu
+      clearTimeout(pullTimer.current);
+      pullTimer.current = setTimeout(() => {
+        pull().catch((e) => {
+          setError(e.message);
+          setStatus(navigator.onLine ? "error" : "offline");
+        });
+      }, PULL_DEBOUNCE_MS);
+    });
+  }, [mode, workspaceId, pull]);
+
+  /* --- powrót sieci --- */
   useEffect(() => {
     const back = () => {
-      if (status === "offline" || status === "error") setStatus("synced");
+      if (status === "offline" || status === "error") {
+        pull().catch(() => {});
+      }
     };
     window.addEventListener("online", back);
     return () => window.removeEventListener("online", back);
-  }, [status]);
+  }, [status, pull]);
 
-  const resolveConflict = useCallback(
-    (choice) => {
-      const remote = conflictRef.current;
-      if (choice === "remote" && remote) {
-        dispatch({ type: "replaceState", state: remote.state });
-        remoteRevision.current = remote.revision;
-        pushedRevision.current = remote.revision;
-      } else if (choice === "local" && remote) {
-        // Wymuszamy nadpisanie: przyjmujemy zdalną rewizję jako punkt odniesienia,
-        // więc kolejny zapis przejdzie blokadę optymistyczną.
-        remoteRevision.current = remote.revision;
-        pushedRevision.current = remote.revision;
-      }
-      conflictRef.current = null;
-      setStatus("synced");
+  /* --- akcje --- */
+
+  const newWorkspace = useCallback(async (name) => {
+    setStatus("syncing");
+    try {
+      const id = await createWorkspace(name);
+      const list = await listWorkspaces();
+      setWorkspaces(list);
+      setWorkspaceId(id);
+      return id;
+    } catch (e) {
+      setError(e.message);
+      setStatus("error");
+      throw e;
+    }
+  }, []);
+
+  /**
+   * Domknięcie fazy. W trybie zespołowym decyduje baza — klient mógłby
+   * pracować na nieaktualnym obrazie bramki.
+   */
+  const closePhase = useCallback(
+    async (phaseId) => {
+      if (mode !== "cloud") return null;
+      const result = await closePhaseRemote(phaseId);
+      await pull();
+      return result;
     },
-    [dispatch]
+    [mode, pull]
+  );
+
+  const closeSprint = useCallback(
+    async (sprintId) => {
+      if (mode !== "cloud") return null;
+      const result = await closeSprintRemote(sprintId);
+      await pull();
+      return result;
+    },
+    [mode, pull]
   );
 
   const logout = useCallback(async () => {
-    clearTimeout(timer.current);
+    clearTimeout(pushTimer.current);
+    clearTimeout(pullTimer.current);
+    localStorage.removeItem(WORKSPACE_KEY);
+    setWorkspaceId(null);
     await signOut();
   }, []);
 
   return {
     configured: isCloudConfigured,
+    mode,
     session,
+    workspaces,
+    workspaceId,
+    role,
     status,
     error,
     lastSyncedAt,
-    hasConflict: status === "conflict",
-    conflict: conflictRef.current,
-    resolveConflict,
+    selectWorkspace: setWorkspaceId,
+    newWorkspace,
+    closePhase,
+    closeSprint,
+    refresh: pull,
     logout,
   };
 }

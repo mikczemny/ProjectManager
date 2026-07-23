@@ -86,14 +86,18 @@ npm run preview
 ## Synchronizacja z chmurą (opcjonalna)
 
 Domyślnie dane siedzą w `localStorage` i aplikacja nie pokazuje niczego związanego z chmurą.
-Po skonfigurowaniu Supabase dochodzi logowanie linkiem mailowym i synchronizacja stanu między
-urządzeniami — z blokadą optymistyczną i oknem wyboru wersji przy konflikcie.
+Po skonfigurowaniu Supabase dochodzi:
 
-Instrukcja uruchomienia i ograniczenia:
+- logowanie **linkiem mailowym** — aplikacja nie zna i nie przechowuje hasła,
+- **przestrzenie zespołu** ze wspólnymi projektami, szablonami i czasem pracy,
+- **synchronizacja per wiersz** — dwie osoby nie nadpisują się nawzajem,
+- **podgląd na żywo** zmian robionych przez innych,
+- **czas pracy per osoba** — zatrzymujesz swój pomiar, nie cudzy,
+- **bramki sprawdzane w bazie** — nieodświeżona karta nie przepchnie fazy,
+- **role** (owner / manager / member / viewer) egzekwowane przez RLS.
+
+Instrukcja uruchomienia, ograniczenia i decyzje projektowe:
 [docs/synchronizacja-online.md](docs/synchronizacja-online.md).
-
-> Etap 1 obsługuje **jedną osobę na wielu urządzeniach**. Wspólna praca zespołu na jednym
-> projekcie wymaga Etapu 2 (rozbicia stanu na tabele encji).
 
 ## Stos technologiczny
 
@@ -132,9 +136,9 @@ odkładany do klucza `pm-app-state-backup`.
 
 ## Plany rozwoju
 
-- **Praca wielu osób na wspólnych danych** — Etap 2 z
-  [docs/synchronizacja-online.md](docs/synchronizacja-online.md): rozbicie stanu na tabele encji,
-  realtime, `time_entries` zamiast pól czasu na zadaniu
+- **Trwała kolejka offline** — dziś zmiany bez sieci czekają w pamięci karty i giną przy
+  przeładowaniu strony (Etap 4 w [docs/synchronizacja-online.md](docs/synchronizacja-online.md))
+- **Zaproszenia do zespołu z poziomu aplikacji** — dziś przez panel Supabase
 - Widok kalendarza i kamieni milowych
 - Wykres przepływu skumulowanego (CFD)
 - Integracja z GitHubem (domykanie zadań przy zmergowaniu PR)

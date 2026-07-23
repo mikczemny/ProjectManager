@@ -7,7 +7,10 @@ import { uid } from "../lib/format.js";
  * Dzięki temu istniejące produkcje w localStorage przeżywają aktualizację
  * aplikacji zamiast się kasować.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
+
+/** Identyfikator używany w trybie lokalnym, gdy nie ma zalogowanego konta. */
+export const LOCAL_USER = "local";
 
 /* ---------------------------------------------------------------------- */
 /*  Konstruktory encji                                                      */
@@ -28,8 +31,14 @@ export function makeTask(patch = {}) {
     /** Story pointy (Scrum). Estymata w godzinach żyje obok, dla rozliczenia czasu. */
     points: null,
     estimateH: null,
-    timeSpent: 0,
-    timerStartedAt: null,
+    /**
+     * Czas pracy jako wpisy per osoba, nie jedno pole na zadaniu.
+     *
+     * Pojedyncze `timeSpent` + `timerStartedAt` nie przeżywa dwóch osób:
+     * jedna zatrzymuje timer uruchomiony przez drugą i czas przepada. Wpis
+     * bez `endedAt` oznacza pomiar w toku.
+     */
+    timeEntries: [],
     dueDate: null,
     blockedBy: [],
     links: [],
@@ -98,6 +107,16 @@ export function makeSprint(patch = {}) {
   };
 }
 
+export function makeTimeEntry(patch = {}) {
+  return {
+    id: uid(),
+    userId: LOCAL_USER,
+    startedAt: Date.now(),
+    endedAt: null,
+    ...patch,
+  };
+}
+
 export function makeMilestone(patch = {}) {
   return {
     id: uid(),
@@ -113,6 +132,8 @@ export function makeMember(patch = {}) {
     id: uid(),
     name: "",
     role: "",
+    /** Konto, jeśli osoba je ma — wiąże wpisy czasu pracy z człowiekiem. */
+    userId: null,
     ...patch,
   };
 }
@@ -369,6 +390,40 @@ const MIGRATIONS = {
     ...state,
     version: 4,
     meta: state.meta || { revision: 0, updatedAt: Date.now() },
+  }),
+
+  /**
+   * v4 → v5: czas pracy przenosi się z pól zadania do wpisów per osoba.
+   *
+   * Dotychczasowy czas nie ma przypisanego autora — trafia na `LOCAL_USER`,
+   * bo w trybie jednoosobowym to jest prawda, a zmyślanie właściciela byłoby
+   * gorsze niż przyznanie się, że go nie znamy.
+   */
+  4: (state) => ({
+    ...state,
+    version: 5,
+    projects: (state.projects || []).map((p) => ({
+      ...p,
+      tasks: (p.tasks || []).map((t) => {
+        if (t.timeEntries) return t;
+        const entries = [];
+        if (t.timeSpent > 0) {
+          const ended = t.createdAt || Date.now();
+          entries.push(
+            makeTimeEntry({
+              userId: LOCAL_USER,
+              startedAt: ended - t.timeSpent * 1000,
+              endedAt: ended,
+            })
+          );
+        }
+        if (t.timerStartedAt) {
+          entries.push(makeTimeEntry({ userId: LOCAL_USER, startedAt: t.timerStartedAt }));
+        }
+        const { timeSpent: _s, timerStartedAt: _r, ...rest } = t;
+        return { ...rest, timeEntries: entries };
+      }),
+    })),
   }),
 };
 

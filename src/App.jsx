@@ -3,6 +3,7 @@ import {
   Clock, Compass, LayoutTemplate, ListChecks, Users, Flag, FolderPlus, Download, BookMarked,
 } from "lucide-react";
 import { C } from "./theme.js";
+import { LOCAL_USER } from "./domain/schema.js";
 import { StoreProvider, useStore } from "./state/store.jsx";
 import { useCloudSync } from "./cloud/useCloudSync.js";
 import Sidebar from "./components/Sidebar.jsx";
@@ -16,7 +17,7 @@ import TeamView from "./views/TeamView.jsx";
 import TemplatesView from "./views/TemplatesView.jsx";
 import TemplateEditor from "./views/TemplateEditor.jsx";
 import { formatDuration } from "./lib/format.js";
-import { projectTime } from "./domain/selectors.js";
+import { projectTime, isTimerRunning } from "./domain/selectors.js";
 import { processHeadline, nextSteps } from "./domain/guidance.js";
 import { exportProject } from "./domain/storage.js";
 
@@ -39,6 +40,47 @@ export default function App() {
 function Shell() {
   const { state, dispatch, activeProject, allTemplates } = useStore();
   const cloud = useCloudSync(state, dispatch);
+  /**
+   * Tożsamość, na którą zapisywany jest czas pracy. Bez zalogowania jest to
+   * stała lokalna — dzięki temu tryb offline działa bez żadnego konta.
+   */
+  const currentUserId = cloud.session?.user?.id || LOCAL_USER;
+
+  /**
+   * Domknięcie fazy. Lokalnie decyduje reducer, w trybie zespołowym baza —
+   * bo tylko ona widzi, czy bramka jest spełniona w tej sekundzie, a nie
+   * w chwili ostatniego odświeżenia ekranu.
+   */
+  const closePhase = async (phaseId) => {
+    if (cloud.mode !== "cloud") {
+      dispatch({ type: "closePhase", projectId: activeProject.id, phaseId });
+      return;
+    }
+    try {
+      const r = await cloud.closePhase(phaseId);
+      if (r && !r.ok) {
+        alert(
+          `Bramka nie jest spełniona: ${r.openTasks} niezrobionych zadań, ` +
+            `${r.openCriteria} nieodhaczonych kryteriów. ` +
+            `Ktoś mógł zmienić stan zanim kliknąłeś.`
+        );
+      }
+    } catch (e) {
+      alert(`Nie udało się domknąć fazy: ${e.message}`);
+    }
+  };
+
+  const closeSprint = async (sprintId) => {
+    if (cloud.mode !== "cloud") {
+      dispatch({ type: "closeSprint", projectId: activeProject.id, sprintId });
+      return;
+    }
+    try {
+      await cloud.closeSprint(sprintId);
+    } catch (e) {
+      alert(`Nie udało się domknąć sprintu: ${e.message}`);
+    }
+  };
 
   const [view, setView] = useState("now");
   const [activeTaskId, setActiveTaskId] = useState(null);
@@ -52,7 +94,7 @@ function Shell() {
 
   /* Odświeżanie zegarów tylko wtedy, gdy cokolwiek tyka. */
   useEffect(() => {
-    const anyRunning = state.projects.some((p) => p.tasks.some((t) => t.timerStartedAt));
+    const anyRunning = state.projects.some((p) => p.tasks.some((t) => isTimerRunning(t)));
     if (!anyRunning) return;
     const id = setInterval(() => forceTick((n) => n + 1), 1000);
     return () => clearInterval(id);
@@ -176,16 +218,23 @@ function Shell() {
                 dispatch={dispatch}
                 focusPhaseId={focusPhaseId}
                 onOpenTask={setActiveTaskId}
+                onClosePhase={closePhase}
               />
             )}
             {view === "sprint" && (
-              <SprintView project={activeProject} dispatch={dispatch} onOpenTask={setActiveTaskId} />
+              <SprintView
+                project={activeProject}
+                dispatch={dispatch}
+                onOpenTask={setActiveTaskId}
+                onCloseSprint={closeSprint}
+              />
             )}
             {view === "board" && (
               <BoardView
                 project={activeProject}
                 team={state.team}
                 dispatch={dispatch}
+                currentUserId={currentUserId}
                 filter={filter}
                 setFilter={setFilter}
                 onOpenTask={setActiveTaskId}
@@ -211,6 +260,7 @@ function Shell() {
           project={activeProject}
           team={state.team}
           dispatch={dispatch}
+          currentUserId={currentUserId}
           onClose={() => setActiveTaskId(null)}
         />
       )}

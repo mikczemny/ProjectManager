@@ -3,18 +3,19 @@ import { Clock, Pause, Play, Send, Trash2, X, Link2, Ban } from "lucide-react";
 import { C, STATUSES, PRIORITIES, TASK_TYPES, selectStyle, inputStyle } from "../theme.js";
 import { Field, Badge } from "./ui.jsx";
 import { formatDuration, formatDateTime } from "../lib/format.js";
-import { taskTime, blockers } from "../domain/selectors.js";
+import { taskTime, taskTimeByUser, blockers, isTimerRunning } from "../domain/selectors.js";
 
-export default function TaskModal({ task, project, team, dispatch, onClose }) {
+export default function TaskModal({ task, project, team, dispatch, onClose, currentUserId }) {
   const [comment, setComment] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
-  const running = !!task.timerStartedAt;
+  const running = isTimerRunning(task, currentUserId);
+  const anyRunning = isTimerRunning(task);
   const [, tick] = useState(0);
   useEffect(() => {
-    if (!running) return;
+    if (!anyRunning) return;
     const id = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [running]);
+  }, [anyRunning]);
 
   const patch = (p) =>
     dispatch({ type: "patchTask", projectId: project.id, taskId: task.id, patch: p });
@@ -234,7 +235,14 @@ export default function TaskModal({ task, project, team, dispatch, onClose }) {
               )}
             </div>
             <button
-              onClick={() => dispatch({ type: "toggleTimer", projectId: project.id, taskId: task.id })}
+              onClick={() =>
+                dispatch({
+                  type: "toggleTimer",
+                  projectId: project.id,
+                  taskId: task.id,
+                  userId: currentUserId,
+                })
+              }
               style={{
                 display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 7,
                 border: `1px solid ${running ? C.amber : C.borderLight}`,
@@ -246,6 +254,11 @@ export default function TaskModal({ task, project, team, dispatch, onClose }) {
               {running ? "Zatrzymaj" : "Start"}
             </button>
           </div>
+
+          {/* Rozbicie czasu na osoby — pojawia się dopiero, gdy jest co dzielić. */}
+          {(task.timeEntries || []).length > 0 && (
+            <TimeBreakdown task={task} team={team} currentUserId={currentUserId} />
+          )}
 
           {/* --- linki --- */}
           <div>
@@ -353,6 +366,35 @@ export default function TaskModal({ task, project, team, dispatch, onClose }) {
             <Trash2 size={13} /> Usuń zadanie
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TimeBreakdown({ task, team, currentUserId }) {
+  const userIds = [...new Set(task.timeEntries.map((e) => e.userId))];
+  if (userIds.length < 2) return null;
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: C.mutedDim, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        Czas według osób
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {userIds.map((id) => {
+          const member = team.find((m) => m.id === id);
+          const mine = id === currentUserId;
+          return (
+            <div key={id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+              <span style={{ flex: 1, color: mine ? C.text : C.muted }}>
+                {member?.name || (mine ? "Ty" : "—")}
+              </span>
+              <span className="mono" style={{ color: C.muted }}>
+                {formatDuration(taskTimeByUser(task, id))}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ import { Panel, ProgressBar, Muted, Check as CheckBox } from "../components/ui.j
 import { phaseTimeline } from "../domain/guidance.js";
 import { formatDate } from "../lib/format.js";
 
-export default function ProcessView({ project, dispatch, focusPhaseId, onOpenTask }) {
+export default function ProcessView({ project, dispatch, focusPhaseId, onOpenTask, onClosePhase }) {
   const timeline = phaseTimeline(project);
   const [newPhase, setNewPhase] = useState("");
 
@@ -37,6 +37,7 @@ export default function ProcessView({ project, dispatch, focusPhaseId, onOpenTas
               dispatch={dispatch}
               defaultOpen={entry.state === "active" || entry.phase.id === focusPhaseId}
               onOpenTask={onOpenTask}
+              onClose={() => onClosePhase(entry.phase.id)}
             />
           ))}
         </div>
@@ -71,7 +72,7 @@ export default function ProcessView({ project, dispatch, focusPhaseId, onOpenTas
   );
 }
 
-function PhaseCard({ entry, project, dispatch, defaultOpen, onOpenTask }) {
+function PhaseCard({ entry, project, dispatch, defaultOpen, onOpenTask, onClose }) {
   const { phase, gate, state } = entry;
   const [open, setOpen] = useState(defaultOpen);
   const [newCriterion, setNewCriterion] = useState("");
@@ -259,9 +260,7 @@ function PhaseCard({ entry, project, dispatch, defaultOpen, onOpenTask }) {
             ) : (
               <>
                 <button
-                  onClick={() =>
-                    dispatch({ type: "closePhase", projectId: project.id, phaseId: phase.id })
-                  }
+                  onClick={onClose}
                   disabled={!gate.canClose}
                   style={primaryButton(gate.canClose)}
                   title={gate.canClose ? "" : "Bramka nie jest spełniona"}

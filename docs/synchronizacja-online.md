@@ -152,15 +152,17 @@ Każdy etap jest samodzielnie użyteczny; można się zatrzymać po dowolnym.
 Auth + jedna tabela ze stanem w `jsonb` na użytkownika. Znika ryzyko utraty danych, pojawia się
 praca na wielu urządzeniach. Model domenowy bez zmian. Szczegóły uruchomienia niżej.
 
-**Etap 2 — tabele encji i realtime (około tydzień).**
-Rozbicie stanu na tabele, subskrypcja zmian projektu, `time_entries` zamiast pól na zadaniu.
+**Etap 2 — tabele encji i realtime. ✅ ZAIMPLEMENTOWANY.**
+Rozbicie stanu na tabele, subskrypcja zmian przestrzeni, `time_entries` zamiast pól na zadaniu.
 Od tego momentu zespół pracuje na wspólnych danych.
 
-**Etap 3 — role i procedury serwerowe (2–3 dni).**
-RLS, `close_phase` i `close_sprint` jako funkcje w bazie, `audit_log`.
+**Etap 3 — role i procedury serwerowe. ✅ ZAIMPLEMENTOWANY** (poza `audit_log`).
+RLS na wszystkich tabelach, `close_phase` i `close_sprint` jako funkcje w bazie.
 
-**Etap 4 — kolejka offline (2–3 dni).**
-Bufor mutacji, wskaźnik stanu synchronizacji, obsługa odrzuconych zapisów.
+**Etap 4 — kolejka offline (2–3 dni). Do zrobienia.**
+Dziś zmiany zrobione bez sieci czekają w pamięci karty i lecą po powrocie połączenia, ale
+przeładowanie strony w trybie offline gubi to, czego nie zdążyło wyjść. Potrzebny trwały bufor
+mutacji.
 
 ## Uruchomienie Etapu 1
 
@@ -188,12 +190,46 @@ umieszczaj w konfiguracji klucza `service_role`.
   pokazuje wybór wersji zamiast nadpisywać cokolwiek automatycznie.
 - Brak sieci przełącza wskaźnik w tryb „offline"; zapis rusza po powrocie połączenia.
 
-### Ograniczenie Etapu 1
+## Uruchomienie Etapu 2
 
-Stan jest zapisywany **w całości, jako jeden dokument na użytkownika**. To wystarcza do pracy
-jednej osoby na wielu urządzeniach, ale **nie jest jeszcze pracą zespołową** — dwie osoby na
-jednym koncie będą sobie nawzajem nadpisywać stan i zobaczą okno konfliktu. Wspólna praca zespołu
-zaczyna się dopiero po Etapie 2, czyli po rozbiciu stanu na tabele encji.
+Po migracji `0001` uruchom [`0002_entities.sql`](../supabase/migrations/0002_entities.sql).
+Po zalogowaniu w pasku bocznym pojawi się wybór **przestrzeni zespołu**. Załóż pierwszą — jeśli
+masz projekty lokalnie, pusta przestrzeń przejmie je automatycznie przy pierwszym wejściu.
+
+Zapraszanie ludzi odbywa się dziś przez dopisanie wiersza do `memberships` w panelu Supabase
+(`workspace_id`, `user_id` osoby, `role`). Zaproszenia z poziomu aplikacji to osobna rzecz do
+zrobienia.
+
+### Jak działa synchronizacja zespołowa
+
+- **Jednostką zapisu jest wiersz.** Dwie osoby pracujące na tym samym projekcie nie nadpisują się,
+  dopóki nie ruszają tego samego pola tej samej encji.
+- **Wysyłka powstaje z porównania stanów**, nie z tłumaczenia akcji na zapisy. Reducer ma
+  kilkadziesiąt typów akcji i każdy kolejny wymagałby pamiętania o dopisaniu przekładu; różnica
+  między stanami jest kompletna z definicji, więc nowa akcja synchronizuje się sama.
+- **Realtime nie łata stanu pojedynczym wierszem.** Zdarzenie mówi tylko, że coś się ruszyło,
+  a aplikacja pobiera świeży obraz przestrzeni. Przy skali zespołu to jest tanie, a odpada cała
+  klasa błędów z częściowych aktualizacji.
+- **Czas pracy jest per osoba** (`time_entries`). Zatrzymujesz wyłącznie swój pomiar; cudzy widać
+  w sumie, ale przycisk nie udaje, że jest twój. Unikalny indeks pilnuje, żeby jedna osoba nie
+  miała dwóch otwartych pomiarów na jednym zadaniu.
+- **Bramki sprawdza baza.** `close_phase` liczy otwarte zadania i nieodhaczone kryteria
+  w transakcji, więc nieodświeżona karta przeglądarki nie przepchnie fazy, której warunek właśnie
+  przestał być spełniony.
+
+### Role
+
+Egzekwowane przez RLS, nie przez ukrywanie przycisków. `viewer` nie zapisze niczego nawet
+z konsoli, a domykanie faz i sprintów wymaga roli `manager` lub `owner`.
+
+### Czego Etap 2 jeszcze nie ma
+
+- **Trwałej kolejki offline** — patrz Etap 4 wyżej.
+- **Zaproszeń do zespołu z poziomu aplikacji** — na razie przez panel Supabase.
+- **Wiązania członka zespołu z kontem** w interfejsie. Kolumna `members.user_id` istnieje i jest
+  odczytywana, ale ustawia się ją dziś ręcznie. Bez tego rozbicie czasu na osoby pokazuje „Ty"
+  i kreski zamiast imion.
+- **`audit_log`** — historia zmian poza `checked_by` i `completed_by`.
 
 ## Koszt
 

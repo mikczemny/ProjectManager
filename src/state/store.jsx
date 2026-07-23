@@ -12,6 +12,8 @@ import {
   makePhase,
   makeCriterion,
   makeSprint,
+  makeTimeEntry,
+  LOCAL_USER,
   makeMilestone,
   makeProject,
   makeTemplate,
@@ -342,17 +344,28 @@ export function reducer(state, action) {
           )
       );
 
-    case "toggleTimer":
+    /**
+     * Timer działa per osoba: zatrzymujemy wyłącznie własny pomiar i nigdy
+     * cudzy. Bez `userId` obowiązuje tożsamość lokalna.
+     */
+    case "toggleTimer": {
+      const userId = action.userId || LOCAL_USER;
       return mapTasks(state, action.projectId, (tasks) =>
         tasks.map((t) => {
           if (t.id !== action.taskId) return t;
-          if (t.timerStartedAt) {
-            const elapsed = (Date.now() - t.timerStartedAt) / 1000;
-            return touch(t, { timeSpent: t.timeSpent + elapsed, timerStartedAt: null });
+          const entries = t.timeEntries || [];
+          const running = entries.find((e) => e.endedAt == null && e.userId === userId);
+          if (running) {
+            return touch(t, {
+              timeEntries: entries.map((e) =>
+                e.id === running.id ? { ...e, endedAt: Date.now() } : e
+              ),
+            });
           }
-          return touch(t, { timerStartedAt: Date.now() });
+          return touch(t, { timeEntries: [...entries, makeTimeEntry({ userId })] });
         })
       );
+    }
 
     case "addComment":
       return mapTasks(state, action.projectId, (tasks) =>
