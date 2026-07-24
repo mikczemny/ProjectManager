@@ -83,7 +83,7 @@ npm run build
 npm run preview
 ```
 
-## Wdrożenie na własny serwer
+## Wdrożenie na własny serwer *(przygotowane, nieuruchomione)*
 
 Aplikacja to statyczne pliki — wystarczy skopiować `dist/` tam, gdzie serwer www go zobaczy.
 Gotowe konfiguracje: [nginx](deploy/nginx.conf), [Apache](deploy/.htaccess).

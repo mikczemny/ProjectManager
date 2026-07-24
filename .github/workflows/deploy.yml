@@ -88,6 +88,60 @@ jobs:
           echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      # Znacznik pozwala odróżnić katalog należący do tej aplikacji od cudzego.
+      # Bez niego błędna wartość DEPLOY_PATH kasuje obcą stronę.
+      - name: Znacznik wdrożenia
+        run: echo "projekty.dev — katalog zarządzany przez wdrożenie automatyczne" > dist/.projekty-deploy
+
+      # Zabezpieczenie przed skasowaniem cudzej strony.
+      #
+      # rsync --delete usuwa z katalogu docelowego wszystko, czego nie ma
+      # w dist/. Gdyby DEPLOY_PATH wskazywał na katalog głównej witryny —
+      # a na hostingach współdzielonych public_html bywa dowiązaniem właśnie
+      # tam — wdrożenie wymazałoby ją bez ostrzeżenia.
+      #
+      # Wpuszczamy więc tylko katalog pusty albo taki, który sami wcześniej
+      # oznaczyliśmy.
+      - name: Kontrola katalogu docelowego
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          REMOTE_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          # Kod 42 rezerwujemy dla blokady, żeby odróżnić ją od awarii
+          # połączenia. Inaczej zerwany SSH raportowałby "obca zawartość"
+          # i wysyłał diagnozę w złą stronę.
+          set +e
+          ssh -p "$SSH_PORT" "$DEPLOY_USER@$HOST" "
+            mkdir -p '$REMOTE_PATH' || exit 1
+            if [ -f '$REMOTE_PATH/.projekty-deploy' ]; then
+              echo 'Katalog pochodzi z poprzedniego wdrożenia.'
+              exit 0
+            fi
+            if [ -z \"\$(ls -A '$REMOTE_PATH' 2>/dev/null)\" ]; then
+              echo 'Katalog jest pusty.'
+              exit 0
+            fi
+            echo 'Katalog zawiera pliki, których nie umieściło tu wdrożenie:'
+            ls -A '$REMOTE_PATH' | head -20
+            exit 42
+          "
+          code=$?
+          set -e
+
+          if [ "$code" -eq 42 ]; then
+            echo "::error::DEPLOY_PATH wskazuje na katalog z obcą zawartością."
+            echo "::error::Wdrożenie przerwane, żeby nie skasować istniejącej strony."
+            echo "::error::Sprawdź DEPLOY_PATH albo opróżnij katalog, jeśli to pomyłka."
+            exit 1
+          fi
+          if [ "$code" -ne 0 ]; then
+            echo "::error::Połączenie z serwerem nie powiodło się (kod $code)."
+            echo "::error::Sprawdź DEPLOY_HOST, DEPLOY_USER, SSH_PRIVATE_KEY i SSH_KNOWN_HOSTS."
+            exit 1
+          fi
+
       # --delete sprząta pliki po poprzednich wdrożeniach. Bez tego stare
       # bundle zostają na serwerze na zawsze.
       - name: Wysyłka na serwer

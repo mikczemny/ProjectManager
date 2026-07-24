@@ -1,5 +1,12 @@
 # Wdrożenie na własny serwer
 
+> **Status: odłożone.** Wszystko poniżej jest gotowe do użycia — konfiguracje serwera, workflow
+> wdrożeniowy i instrukcja. Brakuje wyłącznie kroków, które trzeba wykonać po stronie hostingu
+> i panelu GitHuba. Aplikacja działa tymczasem lokalnie, bez żadnych braków funkcjonalnych.
+>
+> Rozpoznanie docelowego serwera jest w sekcji [Stan rozpoznania](#stan-rozpoznania) — przy
+> powrocie do tematu nie trzeba go powtarzać.
+
 Aplikacja to **statyczne pliki** — HTML, JS, CSS. Nie ma backendu do uruchomienia, procesu Node do
 pilnowania ani bazy do postawienia (dane obsługuje Supabase). Wdrożenie sprowadza się do
 skopiowania katalogu `dist/` tam, gdzie serwer www go zobaczy.
@@ -119,6 +126,68 @@ zespołu żyją w Supabase. O kopie zadbaj osobno:
 - Supabase (plan płatny) robi automatyczne kopie bazy.
 - Niezależnie od tego przycisk **„Kopia"** w pasku bocznym eksportuje wszystko do pliku JSON.
   Warto to robić przed większymi zmianami.
+
+## Stan rozpoznania
+
+Ustalone na docelowym serwerze (lipiec 2026), żeby nie diagnozować tego ponownie:
+
+| Element | Ustalenie | Znaczenie |
+| --- | --- | --- |
+| Panel | DirectAdmin (układ `~/domains/DOMENA/public_html`) | katalog docelowy wg wzorca niżej |
+| Serwer www | LiteSpeed (obecny katalog `lscache`) | czyta `.htaccess`, `deploy/nginx.conf` niepotrzebny |
+| `rsync` | jest, `/usr/bin/rsync` | workflow działa bez zmian, wariant FTP zbędny |
+| `git` | jest | — |
+| `node` | **brak na serwerze** | bez znaczenia: build robi runner GitHuba, serwer serwuje gotowe pliki |
+| `~/public_html` | dowiązanie do katalogu głównej domeny | **nie wdrażać tam** — patrz ostrzeżenie niżej |
+
+Do ustalenia przy powrocie:
+
+- co znajduje się obecnie w katalogu głównej domeny (czy stoi tam działająca strona),
+- czy założona jest subdomena pod aplikację, i jaki dokładnie katalog jej odpowiada.
+
+## Hosting współdzielony z DirectAdmin i LiteSpeed
+
+Układ katalogów `~/domains/DOMENA/public_html` oraz obecność katalogu `lscache` oznaczają
+DirectAdmina na serwerze LiteSpeed. LiteSpeed czyta `.htaccess` tak samo jak Apache, więc
+[`deploy/.htaccess`](../deploy/.htaccess) jest właściwym plikiem konfiguracyjnym.
+
+### Nie wdrażaj do katalogu głównej strony
+
+`~/public_html` jest zwykle dowiązaniem do katalogu głównej domeny. Wdrożenie tam **usunie stronę,
+która już tam stoi** — rsync z `--delete` kasuje wszystko, czego nie ma w `dist/`.
+
+Załóż subdomenę w DirectAdmin (np. `projekty.mikolajcar.pl`). Aplikacja dostaje własny katalog,
+główna strona zostaje nietknięta, a certyfikat wyklikasz w panelu.
+
+### Subdomena czy podkatalog — to nie jest to samo
+
+DirectAdmin tworzy dla subdomeny katalog wewnątrz głównej domeny, zwykle
+`~/domains/DOMENA/public_html/NAZWA`. Ten sam katalog jest więc dostępny pod dwoma adresami
+i **każdy z nich wymaga innej konfiguracji**:
+
+| Wejście | `VITE_BASE` | Dlaczego |
+| --- | --- | --- |
+| `projekty.mikolajcar.pl` | `/` (domyślnie) | katalog jest korzeniem subdomeny |
+| `mikolajcar.pl/projekty` | `/projekty/` | zasoby leżą o poziom głębiej niż korzeń domeny |
+
+Objaw pomyłki jest charakterystyczny: strona ładuje się jako biała, a w konsoli przeglądarki
+widać błędy 404 przy plikach z `/assets/`.
+
+### Certyfikat HTTPS
+
+W DirectAdmin: **SSL Certificates → Free & automatic certificate from Let's Encrypt**. Zaznacz
+subdomenę i włącz przekierowanie z HTTP. Bez HTTPS logowanie Supabase nie zadziała.
+
+### Gdy brakuje rsync
+
+Część hostingów współdzielonych nie ma `rsync`. Sprawdź:
+
+```bash
+which rsync
+```
+
+Jeśli komenda nic nie zwraca, w workflow zamień krok wysyłki na wariant FTP
+(`SamKirkland/FTP-Deploy-Action`) albo na `scp`. Reszta workflow zostaje bez zmian.
 
 ## Automatyczne wdrażanie (GitHub Actions)
 
