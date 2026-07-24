@@ -83,6 +83,17 @@ npm run build
 npm run preview
 ```
 
+## Wdrożenie na własny serwer
+
+Aplikacja to statyczne pliki — wystarczy skopiować `dist/` tam, gdzie serwer www go zobaczy.
+Gotowe konfiguracje: [nginx](deploy/nginx.conf), [Apache](deploy/.htaccess).
+
+Pełna instrukcja: **[docs/wdrozenie.md](docs/wdrozenie.md)**
+
+> Trzy rzeczy, które psują wdrożenie najczęściej: klucze `VITE_*` są wtapiane w bundle **podczas
+> builda** (build bez nich daje aplikację bez chmury, bez żadnego błędu), domena musi być dopisana
+> w Supabase → Redirect URLs (inaczej magic link nie zaloguje), a HTTPS jest wymagany.
+
 ## Synchronizacja z chmurą (opcjonalna)
 
 Domyślnie dane siedzą w `localStorage` i aplikacja nie pokazuje niczego związanego z chmurą.
