@@ -159,10 +159,9 @@ Od tego momentu zespół pracuje na wspólnych danych.
 **Etap 3 — role i procedury serwerowe. ✅ ZAIMPLEMENTOWANY** (poza `audit_log`).
 RLS na wszystkich tabelach, `close_phase` i `close_sprint` jako funkcje w bazie.
 
-**Etap 4 — kolejka offline (2–3 dni). Do zrobienia.**
-Dziś zmiany zrobione bez sieci czekają w pamięci karty i lecą po powrocie połączenia, ale
-przeładowanie strony w trybie offline gubi to, czego nie zdążyło wyjść. Potrzebny trwały bufor
-mutacji.
+**Etap 4 — trwała kolejka offline. ✅ ZAIMPLEMENTOWANY.**
+Zmiany zrobione bez sieci przeżywają przeładowanie strony i zamknięcie przeglądarki. Szczegóły
+niżej.
 
 ## Uruchomienie Etapu 1
 
@@ -222,9 +221,50 @@ zrobienia.
 Egzekwowane przez RLS, nie przez ukrywanie przycisków. `viewer` nie zapisze niczego nawet
 z konsoli, a domykanie faz i sprintów wymaga roli `manager` lub `owner`.
 
+## Kolejka offline
+
+### Kolejka to różnica, nie lista operacji
+
+Niewysłane zmiany nie są osobną strukturą danych. Kolejką jest **różnica między ostatnim stanem
+potwierdzonym przez bazę a tym, co użytkownik ma teraz lokalnie** — wystarczyło więc utrwalić ten
+pierwszy (`pm-sync-baseline` w `localStorage`, obsługa w [`pending.js`](../src/cloud/pending.js)).
+
+Wobec listy operacji do odtworzenia daje to trzy rzeczy za darmo:
+
+- **kompaktowanie** — dwadzieścia poprawek jednego zadania to nadal jeden zapis,
+- **odporność na kolejność** — nie ma czego układać ani odtwarzać, różnicę liczy się na nowo,
+- **idempotencję** — zapisy identyfikuje klucz wiersza, więc powtórzenie niczego nie psuje.
+
+### Reguła, która chroni przed utratą pracy
+
+> Stan lokalny **nigdy** nie jest zastępowany danymi z bazy, dopóki istnieją niewysłane zmiany.
+
+Każdy cykl synchronizacji ma stałą kolejność: **najpierw wysyłka zaległości, potem pobranie.**
+Odwrotna kolejność wymazywałaby pracę zrobioną offline — i dokładnie to robiła aplikacja przed
+tą zmianą, gdy punkt odniesienia żył wyłącznie w pamięci karty.
+
+Jest jeszcze strażnik na wyścig: jeśli użytkownik zmienił coś w trakcie oczekiwania na odpowiedź
+z bazy, podmiana stanu zostaje pominięta, a te zmiany wychodzą w kolejnym cyklu.
+
+### Zachowanie
+
+- Punkt odniesienia jest związany z przestrzenią roboczą. Zapis z innej przestrzeni jest
+  odrzucany — różnica względem niego wyglądałaby jak masowe usunięcie cudzych danych.
+- Nieudana wysyłka jest ponawiana z narastającym odstępem (2 s → 30 s), a powrót sieci uruchamia
+  ją natychmiast.
+- Liczba oczekujących wierszy jest widoczna w pasku bocznym; przycisk odświeżania wymusza próbę.
+- Zamknięcie karty z niewysłaną pracą wywołuje ostrzeżenie przeglądarki.
+- Gdy zabraknie miejsca w `localStorage`, aplikacja **mówi o tym wprost** zamiast milcząco
+  obiecywać trwałość, której nie ma.
+
+### Czego kolejka nie rozwiązuje
+
+Scalania równoległych zmian **w tym samym polu**. Jeśli obie osoby edytowały opis tego samego
+zadania, wygrywa zapis późniejszy — i tak działa cały model wierszowy. Rozwiązaniem byłby CRDT,
+ale to osobna decyzja architektoniczna, świadomie odłożona.
+
 ### Czego Etap 2 jeszcze nie ma
 
-- **Trwałej kolejki offline** — patrz Etap 4 wyżej.
 - **Zaproszeń do zespołu z poziomu aplikacji** — na razie przez panel Supabase.
 - **Wiązania członka zespołu z kontem** w interfejsie. Kolumna `members.user_id` istnieje i jest
   odczytywana, ale ustawia się ją dziś ręcznie. Bez tego rozbicie czasu na osoby pokazuje „Ty"

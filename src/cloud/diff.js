@@ -1,6 +1,19 @@
 import { COLLECTIONS } from "./entities.js";
 
 /**
+ * Rozkłada stan na wiersze tabel — postać, w której działa różnicowanie.
+ *
+ * Wydzielone, bo to jest też forma, w jakiej utrwalamy punkt odniesienia dla
+ * kolejki offline: mniejsza od pełnego stanu i gotowa do porównania bez
+ * ponownego przeliczania.
+ */
+export function flattenState(state) {
+  const out = {};
+  for (const col of COLLECTIONS) out[col.table] = col.flatten(state);
+  return out;
+}
+
+/**
  * Wylicza, co zmieniło się między dwoma stanami, w postaci operacji na wierszach.
  *
  * Dlaczego różnicowanie, a nie mapowanie akcji na zapisy: reducer ma kilkadziesiąt
@@ -11,11 +24,16 @@ import { COLLECTIONS } from "./entities.js";
  * Zwraca [{ table, upserts: [...], deletes: [id] }] w kolejności zapisu.
  */
 export function diffStates(prev, next) {
+  return diffFlat(flattenState(prev), flattenState(next));
+}
+
+/** Jak `diffStates`, ale na gotowych wierszach — używane przez kolejkę offline. */
+export function diffFlat(prevFlat, nextFlat) {
   const ops = [];
 
   for (const col of COLLECTIONS) {
-    const before = index(col.flatten(prev));
-    const after = index(col.flatten(next));
+    const before = index(prevFlat[col.table] || []);
+    const after = index(nextFlat[col.table] || []);
 
     const upserts = [];
     for (const [id, row] of after) {

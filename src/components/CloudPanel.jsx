@@ -1,5 +1,7 @@
 import React, { useState } from "react";
-import { Cloud, CloudOff, RefreshCw, Check, LogOut, AlertTriangle, Mail, Users, Plus } from "lucide-react";
+import {
+  Cloud, CloudOff, RefreshCw, Check, LogOut, AlertTriangle, Mail, Users, Plus, Upload,
+} from "lucide-react";
 import { C, inputStyle, primaryButton, ghostButton } from "../theme.js";
 import { ModalShell, ModalHeader, Muted } from "./ui.jsx";
 import { sendMagicLink } from "../cloud/sync.js";
@@ -13,6 +15,15 @@ const STATUS = {
   offline: { icon: CloudOff, color: C.amber, label: "Offline — zapiszę później" },
   error: { icon: AlertTriangle, color: C.red, label: "Błąd synchronizacji" },
 };
+
+/** Odmiana przez liczbę — „1 zmiana", „2 zmiany", „5 zmian". */
+function zmianaSlowo(n) {
+  if (n === 1) return "zmiana";
+  const dziesiatki = n % 100;
+  const jednosci = n % 10;
+  if (dziesiatki >= 12 && dziesiatki <= 14) return "zmian";
+  return jednosci >= 2 && jednosci <= 4 ? "zmiany" : "zmian";
+}
 
 const ROLE_LABEL = {
   owner: "właściciel",
@@ -40,6 +51,13 @@ export default function CloudPanel({ cloud }) {
               <Icon size={12} color={meta.color} />
               <span style={{ fontSize: 11, color: meta.color, flex: 1 }}>{meta.label}</span>
               <button
+                onClick={cloud.refresh}
+                title="Synchronizuj teraz"
+                style={{ background: "none", border: "none", color: C.mutedDim, display: "flex", padding: 2 }}
+              >
+                <RefreshCw size={12} />
+              </button>
+              <button
                 onClick={cloud.logout}
                 title="Wyloguj"
                 style={{ background: "none", border: "none", color: C.mutedDim, display: "flex", padding: 2 }}
@@ -47,6 +65,41 @@ export default function CloudPanel({ cloud }) {
                 <LogOut size={12} />
               </button>
             </div>
+
+            {/* Kolejka niewysłanych zmian. Milczenie w tym miejscu kazałoby
+                użytkownikowi zgadywać, czy jego praca gdzieś dotarła. */}
+            {cloud.pendingCount > 0 && (
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: 6, marginBottom: 6,
+                  padding: "5px 7px", borderRadius: 6,
+                  background: `${C.amber}14`, border: `1px solid ${C.amber}44`,
+                }}
+              >
+                <Upload size={11} color={C.amber} style={{ flexShrink: 0 }} />
+                <span style={{ fontSize: 10.5, color: C.amber, flex: 1 }}>
+                  {cloud.pendingCount} {zmianaSlowo(cloud.pendingCount)} czeka na wysłanie
+                </span>
+              </div>
+            )}
+
+            {/* Kolejka trzyma się localStorage. Gdy zapis się nie powiódł,
+                obietnica trwałości przestaje obowiązywać i trzeba to powiedzieć. */}
+            {!cloud.queueDurable && (
+              <div
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 6,
+                  padding: "5px 7px", borderRadius: 6,
+                  background: `${C.red}14`, border: `1px solid ${C.red}44`,
+                }}
+              >
+                <AlertTriangle size={11} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: 10.5, color: C.red, lineHeight: 1.4 }}>
+                  Brak miejsca w przeglądarce — niewysłane zmiany nie przetrwają
+                  przeładowania strony.
+                </span>
+              </div>
+            )}
             {cloud.workspaces.length > 0 && (
               <select
                 value={cloud.workspaceId || ""}
