@@ -1,0 +1,113 @@
+name: Build i wdrożenie
+
+# Wdrożenie rusza po wypchnięciu do main oraz na żądanie z zakładki Actions.
+# Ręczne uruchomienie przydaje się, gdy trzeba wdrożyć ponownie bez zmiany kodu
+# — na przykład po podmianie kluczy w sekretach.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Wdrożenia nie mogą nachodzić na siebie: dwa rsynci naraz do tego samego
+# katalogu potrafią zostawić serwer w stanie pośrednim.
+concurrency:
+  group: deploy-produkcja
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: produkcja
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalacja zależności
+        run: npm ci
+
+      # Klucze muszą istnieć PRZED buildem — Vite wtapia je w bundle i nie da
+      # się ich podmienić później. Bez tej kontroli workflow wdrożyłby po cichu
+      # aplikację bez logowania i synchronizacji.
+      - name: Kontrola sekretów
+        env:
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+          KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::error::Brak VITE_SUPABASE_URL lub VITE_SUPABASE_ANON_KEY w sekretach repozytorium."
+            echo "::error::Build bez nich da aplikację bez chmury. Przerywam."
+            exit 1
+          fi
+          case "$KEY" in
+            *service_role*)
+              echo "::error::To wygląda na klucz service_role. Omija RLS i NIE MOŻE trafić do frontendu."
+              exit 1
+              ;;
+          esac
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_BASE: ${{ vars.VITE_BASE }}
+        run: npm run build
+
+      # Sanity check: czy konfiguracja faktycznie weszła do bundle. Taniej
+      # wyłapać to tutaj niż po wdrożeniu, gdy zespół nie może się zalogować.
+      - name: Weryfikacja artefaktu
+        env:
+          URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: |
+          if ! grep -qF "$URL" dist/assets/*.js; then
+            echo "::error::Adres Supabase nie trafił do bundle. Wdrożenie przerwane."
+            exit 1
+          fi
+          echo "Artefakt zawiera konfigurację chmury."
+          du -sh dist
+
+      - name: Klucz SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      # Odcisk klucza serwera z sekretu, a nie ślepe zaufanie przy pierwszym
+      # połączeniu — inaczej wdrożenie da się przekierować podmienionym hostem.
+      - name: Znany host
+        env:
+          KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # --delete sprząta pliki po poprzednich wdrożeniach. Bez tego stare
+      # bundle zostają na serwerze na zawsze.
+      - name: Wysyłka na serwer
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          REMOTE_PATH: ${{ secrets.DEPLOY_PATH }}
+          SSH_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          rsync -avz --delete \
+            -e "ssh -p $SSH_PORT" \
+            dist/ "$DEPLOY_USER@$HOST:$REMOTE_PATH"
+
+      - name: Podsumowanie
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+        run: |
+          {
+            echo "### Wdrożenie zakończone"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA::7}\`"
+            echo "- Adres: ${PUBLIC_URL:-ustaw zmienną PUBLIC_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"

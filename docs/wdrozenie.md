@@ -120,11 +120,77 @@ zespołu żyją w Supabase. O kopie zadbaj osobno:
 - Niezależnie od tego przycisk **„Kopia"** w pasku bocznym eksportuje wszystko do pliku JSON.
   Warto to robić przed większymi zmianami.
 
+## Automatyczne wdrażanie (GitHub Actions)
+
+Workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) po każdym wypchnięciu
+do `main` buduje aplikację i wysyła ją na serwer. Można go też uruchomić ręcznie z zakładki
+**Actions** — przydaje się po zmianie kluczy, gdy kod się nie zmienił.
+
+Workflow przerywa wdrożenie, gdy: brakuje kluczy, klucz wygląda na `service_role`, lint nie
+przechodzi albo konfiguracja nie trafiła do zbudowanego pliku. Lepiej, żeby zatrzymał się tutaj
+niż żeby wdrożył aplikację, w której nikt się nie zaloguje.
+
+### Krok 1 — klucz SSH dla wdrożeń
+
+Osobny klucz wyłącznie do wdrażania, **bez hasła** (workflow nie ma go jak wpisać). Uruchom
+u siebie:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/deploy_projekty -N "" -C "github-actions-projekty"
+```
+
+Część publiczną wgraj na serwer:
+
+```bash
+ssh-copy-id -i ~/.ssh/deploy_projekty.pub uzytkownik@twojadomena.pl
+```
+
+Odcisk klucza serwera (potrzebny, żeby wdrożenia nie dało się przekierować na podstawiony host):
+
+```bash
+ssh-keyscan -H twojadomena.pl
+```
+
+### Krok 2 — sekrety w repozytorium
+
+**Settings → Secrets and variables → Actions → New repository secret.**
+
+> Wpisujesz je bezpośrednio w GitHubie. Nie przesyłaj kluczy ani haseł przez czat — nie są mi
+> potrzebne do niczego.
+
+| Sekret | Skąd wziąć |
+| --- | --- |
+| `VITE_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
+| `VITE_SUPABASE_ANON_KEY` | tamże → `anon` `public` (**nigdy** `service_role`) |
+| `SSH_PRIVATE_KEY` | zawartość `~/.ssh/deploy_projekty` (część **prywatna**, z liniami BEGIN/END) |
+| `SSH_KNOWN_HOSTS` | wynik `ssh-keyscan -H twojadomena.pl` |
+| `DEPLOY_HOST` | `twojadomena.pl` |
+| `DEPLOY_USER` | użytkownik SSH |
+| `DEPLOY_PATH` | katalog publiczny, np. `/var/www/projekty.dev/` |
+
+W zakładce **Variables** (nie Secrets) opcjonalnie:
+
+| Zmienna | Do czego |
+| --- | --- |
+| `PUBLIC_URL` | adres w podsumowaniu wdrożenia |
+| `DEPLOY_PORT` | port SSH, jeśli inny niż 22 |
+| `VITE_BASE` | gdy aplikacja stoi w podkatalogu, np. `/pm/` |
+
+### Krok 3 — środowisko
+
+Workflow używa środowiska `produkcja`. Utwórz je w **Settings → Environments**. Możesz tam włączyć
+**Required reviewers**, jeśli chcesz, żeby wdrożenie czekało na Twoje kliknięcie zamiast ruszać
+automatycznie po każdym pushu.
+
+### Krok 4 — pierwsze uruchomienie
+
+Actions → **Build i wdrożenie** → **Run workflow**. Jeśli coś jest nie tak, workflow zatrzyma się
+z czytelnym komunikatem, zamiast wdrożyć uszkodzoną wersję.
+
 ## Czego to wdrożenie nie obejmuje
 
-- **Automatycznego wdrażania z repozytorium** (CI/CD). Dziś build i wysyłka są ręczne. Jeśli
-  zacznie to uwierać, GitHub Actions z krokiem `rsync` to około pół dnia roboty — klucze trafiają
-  wtedy do sekretów repozytorium, nie na dysk serwera.
 - **Środowiska testowego** obok produkcyjnego. Przy jednym zespole i jednym produkcie to zwykle
   przerost formy, ale gdy dojdzie więcej osób, osobna subdomena z osobnym projektem Supabase
   oszczędza nerwów.
+- **Wycofania wdrożenia jednym kliknięciem.** Dziś powrót do poprzedniej wersji to ponowne
+  uruchomienie starszego workflow albo `git revert` i push.

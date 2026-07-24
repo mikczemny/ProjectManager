@@ -88,6 +88,10 @@ npm run preview
 Aplikacja to statyczne pliki — wystarczy skopiować `dist/` tam, gdzie serwer www go zobaczy.
 Gotowe konfiguracje: [nginx](deploy/nginx.conf), [Apache](deploy/.htaccess).
 
+Wdrażanie automatyczne: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — push do
+`main` buduje i wysyła na serwer, a wdrożenie przerywa się, gdy brakuje kluczy albo konfiguracja
+nie trafiła do bundle.
+
 Pełna instrukcja: **[docs/wdrozenie.md](docs/wdrozenie.md)**
 
 > Trzy rzeczy, które psują wdrożenie najczęściej: klucze `VITE_*` są wtapiane w bundle **podczas
