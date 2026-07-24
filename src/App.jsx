@@ -6,6 +6,8 @@ import { C } from "./theme.js";
 import { LOCAL_USER } from "./domain/schema.js";
 import { StoreProvider, useStore } from "./state/store.jsx";
 import { useCloudSync } from "./cloud/useCloudSync.js";
+import { captureTokenFromUrl, readPendingToken } from "./cloud/invitations.js";
+import AcceptInvitation from "./components/AcceptInvitation.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import TaskModal from "./components/TaskModal.jsx";
 import { NewProjectModal, AddMemberModal, SaveAsTemplateModal } from "./components/modals.jsx";
@@ -91,6 +93,15 @@ function Shell() {
   /** null = tworzymy nowy szablon; obiekt = edytujemy istniejący. */
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [, forceTick] = useState(0);
+
+  /**
+   * Token zaproszenia z adresu. Wyjmujemy go raz, przy pierwszym renderze —
+   * dalej żyje w localStorage, żeby przetrwał logowanie magic linkiem, które
+   * wraca pod goły adres i gubi parametry.
+   */
+  const [inviteToken, setInviteToken] = useState(
+    () => captureTokenFromUrl() || readPendingToken()
+  );
 
   /* Odświeżanie zegarów tylko wtedy, gdy cokolwiek tyka. */
   useEffect(() => {
@@ -245,6 +256,7 @@ function Shell() {
                 project={activeProject}
                 team={state.team}
                 dispatch={dispatch}
+                cloud={cloud}
                 onAdd={() => setModal("addMember")}
               />
             )}
@@ -262,6 +274,16 @@ function Shell() {
           dispatch={dispatch}
           currentUserId={currentUserId}
           onClose={() => setActiveTaskId(null)}
+        />
+      )}
+
+      {/* Zaproszenie ma pierwszeństwo przed resztą — użytkownik trafił tu
+          właśnie po to, a bez konta i tak nie zobaczy wspólnych danych. */}
+      {inviteToken && cloud.configured && (
+        <AcceptInvitation
+          token={inviteToken}
+          cloud={cloud}
+          onDone={() => setInviteToken(null)}
         />
       )}
 

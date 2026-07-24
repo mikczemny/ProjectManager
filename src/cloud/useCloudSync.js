@@ -335,6 +335,23 @@ export function useCloudSync(state, dispatch) {
 
   /* --- akcje --- */
 
+  /**
+   * Odświeża listę przestrzeni. Wywoływane po przyjęciu zaproszenia —
+   * bez tego świeże członkostwo nie pojawiłoby się do następnego logowania.
+   */
+  const reloadWorkspaces = useCallback(async (preferId) => {
+    const list = await listWorkspaces();
+    setWorkspaces(list);
+    if (preferId && list.some((w) => w.id === preferId)) {
+      // Wchodzimy do nowej przestrzeni, więc punkt odniesienia poprzedniej
+      // przestaje cokolwiek znaczyć.
+      clearBaseline();
+      baselineRef.current = null;
+      setWorkspaceId(preferId);
+    }
+    return list;
+  }, []);
+
   const newWorkspace = useCallback(async (name) => {
     setStatus("syncing");
     try {
@@ -416,6 +433,7 @@ export function useCloudSync(state, dispatch) {
     queueDurable,
     selectWorkspace: setWorkspaceId,
     newWorkspace,
+    reloadWorkspaces,
     closePhase,
     closeSprint,
     refresh: syncManually,

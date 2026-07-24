@@ -4,8 +4,9 @@ import { C, primaryButton } from "../theme.js";
 import { Avatar, Panel, Muted, SectionTitle, Badge, ProgressBar } from "../components/ui.jsx";
 import { memberWorkload } from "../domain/selectors.js";
 import { formatHours } from "../lib/format.js";
+import WorkspaceAccess from "../components/WorkspaceAccess.jsx";
 
-export default function TeamView({ project, team, dispatch, onAdd }) {
+export default function TeamView({ project, team, dispatch, onAdd, cloud }) {
   const loads = team.map((m) => ({ member: m, load: memberWorkload(project, m.id) }));
   const maxOpen = Math.max(1, ...loads.map((l) => l.load.open));
   const unassigned = project.tasks.filter((t) => t.status !== "done" && !t.assignee);
@@ -88,6 +89,8 @@ export default function TeamView({ project, team, dispatch, onAdd }) {
             </Panel>
           ))}
         </div>
+
+        {cloud && <WorkspaceAccess cloud={cloud} />}
       </div>
     </div>
   );

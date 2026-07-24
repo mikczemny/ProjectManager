@@ -263,9 +263,57 @@ Scalania równoległych zmian **w tym samym polu**. Jeśli obie osoby edytowały
 zadania, wygrywa zapis późniejszy — i tak działa cały model wierszowy. Rozwiązaniem byłby CRDT,
 ale to osobna decyzja architektoniczna, świadomie odłożona.
 
-### Czego Etap 2 jeszcze nie ma
+## Zaproszenia do zespołu
 
-- **Zaproszeń do zespołu z poziomu aplikacji** — na razie przez panel Supabase.
+Migracja [`0003_invitations.sql`](../supabase/migrations/0003_invitations.sql). Zarządzanie jest
+w zakładce **Zespół**, w sekcji „Dostęp do przestrzeni".
+
+### Dwie listy, które łatwo pomylić
+
+| Lista | Czym jest |
+| --- | --- |
+| **Zespół** | osoby, którym przypisujesz zadania — mogą nie mieć konta |
+| **Dostęp do przestrzeni** | konta, które widzą dane tej przestrzeni |
+
+Mylenie ich kończy się albo zakładaniem kont osobom, które ich nie potrzebują, albo zadaniami
+przypisanymi w próżnię. Powiązanie jednej z drugą (kolumna `members.user_id`) czeka na osobne
+zadanie.
+
+### Aplikacja nie wysyła maili — i to jest decyzja, nie brak
+
+Wysyłka wymagałaby klucza `service_role`, który nie ma prawa znaleźć się w przeglądarce. Zamiast
+tego powstaje link, trafia do schowka, a zapraszający przekazuje go sam.
+
+Konsekwencja: **link jest sekretem**. Stąd trzy zabezpieczenia po stronie bazy:
+
+- token z 24 losowych bajtów — zgadywanie odpada,
+- ważność tygodniowa,
+- **wymóg zgodności adresu e-mail** przy przyjmowaniu. Bez tego przechwycony link wpuszczałby
+  dowolną osobę, a link wędruje pocztą i czatem, gdzie bywa przeklejany w przypadkowe miejsca.
+
+### Uprawnienia
+
+Egzekwowane w funkcjach bazy, nie w interfejsie:
+
+- zapraszać mogą `owner` i `manager`,
+- rolę `manager` może nadać **wyłącznie** `owner` — inaczej manager wyniósłby kogoś do swojego
+  poziomu i obszedł ograniczenia, którym sam podlega,
+- roli `owner` nie da się nadać zaproszeniem; właściciela wyznacza się ręcznie,
+- odbierać dostęp może `owner`; każdy może odejść sam,
+- ostatniego właściciela nie da się usunąć — przestrzeń bez właściciela nie miałaby kto zarządzać.
+
+### Przebieg
+
+1. Owner lub manager wpisuje adres, wybiera rolę, dostaje link w schowku.
+2. Przekazuje link zapraszanemu.
+3. Zapraszany otwiera link. Jeśli nie ma konta, loguje się magic linkiem — token przeczeka
+   logowanie w `localStorage`, bo magic link wraca pod goły adres i gubi parametry.
+4. Po przyjęciu przestrzeń pojawia się na liście bez potrzeby ponownego logowania.
+
+Token znika z paska adresu zaraz po wczytaniu, żeby nie wyciekł przez historię przeglądarki ani
+udostępniony zrzut ekranu. Nowe zaproszenie dla tego samego adresu unieważnia poprzednie.
+
+### Czego Etap 2 jeszcze nie ma
 - **Wiązania członka zespołu z kontem** w interfejsie. Kolumna `members.user_id` istnieje i jest
   odczytywana, ale ustawia się ją dziś ręcznie. Bez tego rozbicie czasu na osoby pokazuje „Ty"
   i kreski zamiast imion.

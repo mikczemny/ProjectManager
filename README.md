@@ -110,7 +110,8 @@ Po skonfigurowaniu Supabase dochodzi:
 - **czas pracy per osoba** — zatrzymujesz swój pomiar, nie cudzy,
 - **bramki sprawdzane w bazie** — nieodświeżona karta nie przepchnie fazy,
 - **role** (owner / manager / member / viewer) egzekwowane przez RLS,
-- **trwała kolejka offline** — praca bez sieci przeżywa przeładowanie strony.
+- **trwała kolejka offline** — praca bez sieci przeżywa przeładowanie strony,
+- **zaproszenia do zespołu** — link z terminem ważności i wymogiem zgodności adresu.
 
 Instrukcja uruchomienia, ograniczenia i decyzje projektowe:
 [docs/synchronizacja-online.md](docs/synchronizacja-online.md).
@@ -152,7 +153,6 @@ odkładany do klucza `pm-app-state-backup`.
 
 ## Plany rozwoju
 
-- **Zaproszenia do zespołu z poziomu aplikacji** — dziś przez panel Supabase
 - **Wiązanie członka zespołu z kontem** — kolumna `members.user_id` istnieje i jest czytana,
   ale ustawia się ją ręcznie; bez tego rozbicie czasu pokazuje „Ty" zamiast imion
 - Widok kalendarza i kamieni milowych
